@@ -1,6 +1,8 @@
+import os
+
 import pandas as pd
 from sklearn.datasets import load_boston
-import os
+
 from vivid.core import AbstractFeature, EnsembleFeature, MergeFeature
 from vivid.featureset import AbstractAtom
 from vivid.featureset.encodings import CountEncodingAtom
