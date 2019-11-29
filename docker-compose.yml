@@ -4,7 +4,7 @@ services:
     build:
       dockerfile: ./Dockerfile
       context: ./
-    image: registry.gitlab.com/atma_inc/vivid/test
+    image: registry.gitlab.com/nyker510/vivid/test
     container_name: vivid-test
     working_dir: '/workspace'
     volumes:
