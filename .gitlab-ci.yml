@@ -29,9 +29,6 @@ build-test:
   only:
     refs:
       - master
-    changes:
-      - Dockerfile
-      - setup.py
 
 test:
   stage: test
