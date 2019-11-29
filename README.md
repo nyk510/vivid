@@ -8,11 +8,18 @@ Support Tools for Machine Learning Vividly 🚀
 pip install git+https://gitlab.com/nyker510/vivid
 ```
 
+## Sample Code
+
+In `/vivid/smaples`, Some sample script codes exist.
+
 ## Developer
 
-### Recomended
+### Requiremtns
 
-create same docker-image as test enviroment.
+* docker
+* docker-compose
+
+create docker-image from docker-compose file
 
 ```bash
 docker-compose build
