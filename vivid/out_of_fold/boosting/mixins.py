@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from vivid.sklearn_extend import PrePostProcessModel
 from vivid.visualize import visualize_feature_importance
 from ..base import BaseOutOfFoldFeature
+from optuna.trial import Trial
 
 
 class FeatureImportanceMixin:
@@ -59,7 +60,7 @@ class BoostingOufOfFoldFeatureSet(FeatureImportanceMixin, BoostingEarlyStoppingM
     pass
 
 
-def get_boosting_parameter_suggestions(trial):
+def get_boosting_parameter_suggestions(trial: Trial) -> dict:
     """
     Get parameter sample for Boosting (like XGBoost, LightGBM)
 
@@ -82,9 +83,9 @@ def get_boosting_parameter_suggestions(trial):
         'subsample': trial.suggest_loguniform('subsample', .5, 1.),
         # 木の最大の深さ
         # たとえば 5 の時各弱学習木のぶん機は最大でも5に制限される.
-        'max_depth': trial.suggest_categorical('max_depth', [3, 4, 5, 6, 7, 8]),
+        'max_depth': trial.suggest_int('max_depth', low=3, high=8),
         # 末端ノードに含まれる最小のサンプル数
         # これを下回るような分割は作れなくなるため, 大きく設定するとより全体の傾向でしか分割ができなくなる
         # [NOTE]: 数であるのでデータセットの大きさ依存であることに注意
-        'min_child_weight': trial.suggest_int('min_child_weight', 1, 40)
+        'min_child_weight': trial.suggest_uniform('min_child_weight', low=.5, high=40)
     }

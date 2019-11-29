@@ -14,7 +14,7 @@ In `/vivid/smaples`, Some sample script codes exist.
 
 ## Developer
 
-### Requiremtns
+### Requirements
 
 * docker
 * docker-compose
