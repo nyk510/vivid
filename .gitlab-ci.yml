@@ -3,7 +3,7 @@ services:
   - docker:dind
 
 variables:
-  REGISTRY_BASE: registry.gitlab.com/atma_inc/${CI_PROJECT_NAME}
+  REGISTRY_BASE: registry.gitlab.com/nyker510/${CI_PROJECT_NAME}
   # [HOTFIX]: gitlab のバグでないと Docker in Docker のデーモンにアクセスできないっぽい
   DOCKER_TLS_CERTDIR: ''
 
