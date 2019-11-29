@@ -1,0 +1,16 @@
+version: "2.3"
+services:
+  test:
+    build:
+      dockerfile: ./Dockerfile
+      context: ./
+    image: registry.gitlab.com/atma_inc/vivid/test
+    container_name: vivid-test
+    working_dir: '/workspace'
+    volumes:
+      - ./:/workspace
+    ports:
+      - 5555:8888
+    environment:
+      - PYTHONPATH=/workspace
+    tty: true
