@@ -3,7 +3,8 @@ from copy import deepcopy
 import xgboost as xgb
 
 from vivid.out_of_fold.base import BaseOptunaOutOfFoldFeature
-from .mixins import FeatureImportanceMixin, BoostingOufOfFoldFeatureSet, get_boosting_parameter_suggestions
+from .mixins import FeatureImportanceMixin, BoostingOufOfFoldFeatureSet, get_boosting_parameter_suggestions, \
+    BoostingEarlyStoppingMixin
 
 
 class XGBoostClassifierOutOfFold(BoostingOufOfFoldFeatureSet):
@@ -15,23 +16,28 @@ class XGBoostClassifierOutOfFold(BoostingOufOfFoldFeatureSet):
         'n_estimators': 1000,
         'colsample_bytree': .8,
         'subsample': .7,
+        'n_jobs': -1
     }
 
 
 class XGBoostRegressorOutOfFold(BoostingOufOfFoldFeatureSet):
     model_class = xgb.XGBRegressor
     initial_params = {
-        'n_jobs': -1,
         'objective': 'reg:squarederror',
-        'learning_rate': .2,
-        'reg_lambda': 1e-2,
-        'n_estimators': 1000,
-        'colsample_bytree': .8,
-        'subsample': .7,
+        'eval_metric': 'mae',
+        'learning_rate': .05,
+        'colsample_bytree': .7,
+        'subsample': .8,
+        'reg_lambda': 1.,
+        'metric': 'mae',
+        'max_depth': 5,
+        'min_child_weight': 1,
+        'n_estimators': 10000,
+        'n_jobs': -1
     }
 
 
-class OptunaXGBRegressionOutOfFold(FeatureImportanceMixin, BaseOptunaOutOfFoldFeature):
+class OptunaXGBRegressionOutOfFold(FeatureImportanceMixin, BoostingEarlyStoppingMixin, BaseOptunaOutOfFoldFeature):
     model_class = xgb.XGBRegressor
     initial_params = deepcopy(XGBoostRegressorOutOfFold.initial_params)
 
@@ -41,7 +47,7 @@ class OptunaXGBRegressionOutOfFold(FeatureImportanceMixin, BaseOptunaOutOfFoldFe
         return param
 
 
-class OptunaXGBClassifierOutOfFold(FeatureImportanceMixin, BaseOptunaOutOfFoldFeature):
+class OptunaXGBClassifierOutOfFold(FeatureImportanceMixin, BoostingEarlyStoppingMixin, BaseOptunaOutOfFoldFeature):
     model_class = xgb.XGBClassifier
     initial_params = deepcopy(XGBoostClassifierOutOfFold.initial_params)
 
