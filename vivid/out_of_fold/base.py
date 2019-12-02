@@ -369,6 +369,8 @@ class BaseOptunaOutOfFoldFeature(BaseOutOfFoldFeature):
             最適なパラメータ
             `target_logscale` など変換に関するものもこの dict の中に含めてください
         """
+        self.logger.info('start optimize by optuna')
+
         self.study = optuna.study.create_study()
         objective = lambda trial: self.get_objective(trial, X, y)
         self.study.optimize(objective, n_trials=self.n_trails, n_jobs=self.optuna_jobs)
