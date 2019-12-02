@@ -11,12 +11,11 @@ class XGBoostClassifierOutOfFold(BoostingOufOfFoldFeatureSet):
     eval_metric = 'logloss'
     model_class = xgb.XGBClassifier
     initial_params = {
-        'learning_rate': .05,
+        'learning_rate': .1,
         'reg_lambda': 1e-2,
         'n_estimators': 1000,
         'colsample_bytree': .8,
         'subsample': .7,
-        'n_jobs': -1
     }
 
 
@@ -25,15 +24,13 @@ class XGBoostRegressorOutOfFold(BoostingOufOfFoldFeatureSet):
     initial_params = {
         'objective': 'reg:squarederror',
         'eval_metric': 'mae',
-        'learning_rate': .05,
+        'learning_rate': .1,
         'colsample_bytree': .7,
         'subsample': .8,
         'reg_lambda': 1.,
-        'metric': 'mae',
         'max_depth': 5,
         'min_child_weight': 1,
         'n_estimators': 10000,
-        'n_jobs': -1
     }
 
 
