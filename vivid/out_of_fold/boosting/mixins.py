@@ -52,7 +52,7 @@ class BoostingEarlyStoppingMixin:
                   eval_set=[(x_valid, y_valid)],
                   early_stopping_rounds=self.early_stopping_rounds,
                   eval_metric=eval_metric,
-                  verbose=self.fit_verbose)
+                  verbose=None if cv is None else self.fit_verbose)
         return model
 
 

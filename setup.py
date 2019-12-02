@@ -51,7 +51,7 @@ setup(
     description='Support Tools for Machine Learning VIVIDLY',
     long_description=README,
     url='https://www.example.com/',
-    author_email='yourname@example.com',
+    author_email='yamaguchi@atma.co.jp',
     install_requires=get_install_requires(),
     tests_require=get_extra_requires()['test'],
     extras_require=get_extra_requires(),
@@ -60,7 +60,7 @@ setup(
         'Framework :: scikit-learn',
         'Framework :: scikit-learn :: X.Y',  # replace "X.Y" as appropriate
         'Intended Audience :: Developers',
-        'License :: OSI Approved :: BSD License',  # example license
+        'License :: OSI Approved :: BSD License',
         'Operating System :: OS Independent',
         'Programming Language :: Python',
         'Programming Language :: Python :: 3.5',

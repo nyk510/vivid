@@ -193,7 +193,7 @@ class BaseOutOfFoldFeature(AbstractFeature):
         df_train = pd.DataFrame(pred_train, columns=[str(self)])
         return df_train
 
-    def create_model(self, model_params, prepend_name) -> PrePostProcessModel:
+    def create_model(self, model_params, prepend_name, recording=False) -> PrePostProcessModel:
         target_logscale = model_params.pop('target_logscale', False)
         target_scaling = model_params.pop('target_scaling', None)
         input_logscale = model_params.pop('input_logscale', False)
@@ -205,13 +205,14 @@ class BaseOutOfFoldFeature(AbstractFeature):
                                     target_scaling=target_scaling,
                                     input_logscale=input_logscale,
                                     input_scaling=input_scaling,
-                                    output_dir=self.output_dir,
+                                    output_dir=self.output_dir if recording else None,
                                     prepend_name=prepend_name,
                                     verbose=self.verbose,
                                     logger=self.logger)
         return model
 
-    def fit_model(self, X, y, model_params, x_valid, y_valid, cv):
+    def fit_model(self, X: np.ndarray, y: np.ndarray,
+                  model_params: dict, x_valid, y_valid, cv=None) -> PrePostProcessModel:
         """
         `PrePostProcessModel` を学習させます.
         recordable_model_params には target/input に関するスケーリングを含めたパラメータ情報を与えてください
@@ -219,13 +220,21 @@ class BaseOutOfFoldFeature(AbstractFeature):
         Args:
             X: 特徴量
             y: ターゲット変数
-            model_params(dict):
-            prepend_name(str):
+            model_params(dict): モデルに渡すパラメータの dict.
+            x_valid:
+            y_valid:
+            cv:
+                None 以外が与えられた時
+                    CVのIndexと解釈し
+                    文字列評価の結果を prefix としてモデルを学習する
+                None のとき
+                    output dir が存在していてもモデルを保存せずに学習します
 
         Returns:
-
+            trained prepost process model
         """
-        model = self.create_model(model_params, prepend_name=str(cv))
+        recording = cv is not None
+        model = self.create_model(model_params, prepend_name=str(cv), recording=recording)
         model.fit(X, y)
         return model
 
@@ -325,19 +334,9 @@ class BaseOptunaOutOfFoldFeature(BaseOutOfFoldFeature):
         model_params = copy.deepcopy(self._initial_params)
         add_model_params = self.generate_model_class_try_params(trial)
         model_params.update(add_model_params)
+        return model_params
 
-        # model params は sklearn model 用のパラメータ. PrePose に投げるときは少し綺麗にする必要がある
-        pre_pose_params = {}
-
-        for name in ['target_logscale', 'target_scaling', 'input_scaling', 'input_logscale']:
-            v = model_params.pop(name, None)
-            if v is not None:
-                pre_pose_params[name] = v
-
-        pre_pose_params['model_params'] = model_params
-        return pre_pose_params
-
-    def get_objective(self, trial: Trial, X, y) -> float:
+    def get_objective(self, trial, X, y) -> float:
         """
         trial ごとの objective の値を返す関数
 
@@ -347,16 +346,14 @@ class BaseOptunaOutOfFoldFeature(BaseOutOfFoldFeature):
             y:
 
         Returns:
-
         """
-
         score = .0
         params = self.generate_try_parameter(trial)
 
         for (x_train, y_train), (x_valid, y_valid), _ in self.get_folds(X, y, groups=None):
-            model = PrePostProcessModel(model_class=self.model_class, **params)
-            model.fit(x_train, y_train)
-            score += self.evaluate_predict(y_valid, model, x_valid)
+            clf = self.fit_model(x_train, y_train,
+                                 model_params=params, x_valid=x_valid, y_valid=y_valid, cv=None)
+            score += self.evaluate_predict(y_valid, clf, x_valid)
         return score / self.num_cv
 
     def get_best_model_parameters(self, X, y) -> dict:
@@ -372,6 +369,8 @@ class BaseOptunaOutOfFoldFeature(BaseOutOfFoldFeature):
             最適なパラメータ
             `target_logscale` など変換に関するものもこの dict の中に含めてください
         """
+        self.logger.info('start optimize by optuna')
+
         self.study = optuna.study.create_study()
         objective = lambda trial: self.get_objective(trial, X, y)
         self.study.optimize(objective, n_trials=self.n_trails, n_jobs=self.optuna_jobs)
