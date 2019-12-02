@@ -38,7 +38,7 @@ def main():
         XGBoostRegressorOutOfFold(name='xgb_simple', parent=entry),
         RFRegressorFeatureOutOfFold(name='rf', parent=entry),
         KNeighborRegressorOutOfFold(name='kneighbor', parent=entry),
-        OptunaXGBRegressionOutOfFold(name='xgb_optuna', n_trials=10, parent=entry),
+        OptunaXGBRegressionOutOfFold(name='xgb_optuna', n_trials=200, parent=entry),
         *create_boosting_seed_blocks(feature_class=XGBoostRegressorOutOfFold, prefix='xgb_',
                                      parent=entry),  # seed averaging models
         *create_boosting_seed_blocks(feature_class=LGBMRegressorOutOfFold, prefix='lgbm_', parent=entry)
@@ -48,7 +48,7 @@ def main():
                                   name='signle_merge')  # 一段目のモデル + もとのデータを merge した特徴量
     stackings = [
         RidgeOutOfFold(name='stacking_ridge', parent=mreged_feature, n_trials=10),
-        OptunaXGBRegressionOutOfFold(name='stacking_xgb', parent=mreged_feature, n_trials=10),
+        OptunaXGBRegressionOutOfFold(name='stacking_xgb', parent=mreged_feature, n_trials=100),
     ]
     ens = EnsembleFeature(stackings[:], name='ensumble', root_dir=entry.root_dir)  # stacking のアンサンブル
     stackings.append(ens)
