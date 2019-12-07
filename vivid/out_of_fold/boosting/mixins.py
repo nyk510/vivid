@@ -3,11 +3,11 @@ from copy import deepcopy
 from typing import List
 
 import matplotlib.pyplot as plt
+from optuna.trial import Trial
 
 from vivid.sklearn_extend import PrePostProcessModel
 from vivid.visualize import visualize_feature_importance
 from ..base import BaseOutOfFoldFeature
-from optuna.trial import Trial
 
 
 class FeatureImportanceMixin:
@@ -47,7 +47,12 @@ class BoostingEarlyStoppingMixin:
         """
         model_params = deepcopy(model_params)
         eval_metric = model_params.pop('eval_metric', None)
-        model = self.create_model(model_params, prepend_name=str(cv))
+        model = self.create_model(model_params, prepend_name=str(cv))  # type: PrePostProcessModel
+
+        # hack: validation data に対して transform が聞かないため, before fit で学習して fit 前に変換を実行する
+        model._before_fit(X, y)
+        x_valid = model.input_transformer.transform(x_valid)
+        y_valid = model.target_transformer.transform(y_valid)
         model.fit(X, y,
                   eval_set=[(x_valid, y_valid)],
                   early_stopping_rounds=self.early_stopping_rounds,
