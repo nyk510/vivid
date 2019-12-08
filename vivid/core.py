@@ -36,6 +36,9 @@ class AbstractFeature(object):
         self.is_entrypoint = parent is None
         self.name = name
         self._root_dir = root_dir
+
+        # 学習時に作成した特徴量
+        self.feat_on_train_df = None
         self.initialize()
 
     def __str__(self):
@@ -148,21 +151,26 @@ class AbstractFeature(object):
         self.initialize()
         if self.has_train_meta_path and not force:
             self.logger.info('train data is exists. load from local.')
-            df_feat = pd.read_csv(self.output_train_meta_path)
+            return pd.read_csv(self.output_train_meta_path)
+
+        # 学習語の特徴量がキャッシュされている時それを返す
+        if self.feat_on_train_df is not None:
+            return self.feat_on_train_df
+
+        if self.has_parent:
+            df_feat = self.parent.fit(input_df, y, force=force)
         else:
-            if self.has_parent:
-                df_feat = self.parent.fit(input_df, y, force=force)
-            else:
-                df_feat = input_df
+            df_feat = input_df
 
-            with timer(self.logger, format_str='for create feature: {:.3f}[s]'):
-                df_feat = self.call(df_feat, y)
+        with timer(self.logger, format_str='for create feature: {:.3f}[s]'):
+            df_feat = self.call(df_feat, y)
 
-            if self.is_recording:
-                os.makedirs(self.output_dir, exist_ok=True)
-                assert os.path.exists(self.output_dir)
-                self.logger.info('training data save to: {}'.format(self.output_train_meta_path))
-                df_feat.to_csv(self.output_train_meta_path, index=False)
+        self.feat_on_train_df = df_feat
+        if self.is_recording:
+            os.makedirs(self.output_dir, exist_ok=True)
+            assert os.path.exists(self.output_dir)
+            self.logger.info('training data save to: {}'.format(self.output_train_meta_path))
+            df_feat.to_csv(self.output_train_meta_path, index=False)
 
         self.logger.info('Shape: {}'.format(df_feat.shape))
 
