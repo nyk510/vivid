@@ -14,7 +14,7 @@ class FeatureImportanceMixin:
     fitted_models: List[PrePostProcessModel]
 
     def after_kfold_fitting(self, df_source, y, predict):
-        print(f'save to {self.output_dir}')
+        self.logger.info(f'save to {self.output_dir}')
 
         if self.is_recording:
             fig, ax, importance_df = visualize_feature_importance(self.fitted_models, columns=df_source.columns,
@@ -29,6 +29,7 @@ class FeatureImportanceMixin:
 
 class BoostingEarlyStoppingMixin:
     early_stopping_rounds = 100
+    eval_metric = None
     fit_verbose = 100
 
     def fit_model(self, X, y, model_params, x_valid, y_valid, cv):
@@ -46,8 +47,9 @@ class BoostingEarlyStoppingMixin:
 
         """
         model_params = deepcopy(model_params)
-        eval_metric = model_params.pop('eval_metric', None)
-        model = self.create_model(model_params, prepend_name=str(cv))  # type: PrePostProcessModel
+        eval_metric = model_params.pop('eval_metric', self.eval_metric)
+        model = self.create_model(model_params, prepend_name=str(cv),
+                                  recording=cv is not None)  # type: PrePostProcessModel
 
         # hack: validation data に対して transform が聞かないため, before fit で学習して fit 前に変換を実行する
         model._before_fit(X, y)

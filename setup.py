@@ -26,6 +26,7 @@ def get_install_requires():
         'scikit-learn',
         'scipy',
         'pandas',
+        'joblib',
         'optuna',
         'xgboost',
         'lightgbm'

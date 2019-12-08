@@ -27,7 +27,7 @@ class SVROutOfFold(BaseOutOfFoldFeature):
     }
 
 
-def get_default_parameter_suggestions(trial):
+def get_svm_parameter_suggestions(trial):
     params = {
         'C': trial.suggest_loguniform('C', 1e-3, 1e2),
         'kernel': trial.suggest_categorical('kernel', ['rbf', 'poly', 'sigmoid', 'linear']),
@@ -46,7 +46,7 @@ class SVCOptunaOutOfFold(BaseOptunaOutOfFoldFeature):
     optuna_jobs = 1
 
     def generate_model_class_try_params(self, trial):
-        params = get_default_parameter_suggestions(trial)
+        params = get_svm_parameter_suggestions(trial)
         return params
 
 
@@ -58,6 +58,6 @@ class SVROptunaOutOfFold(BaseOptunaOutOfFoldFeature):
     }
 
     def generate_model_class_try_params(self, trial):
-        params = get_default_parameter_suggestions(trial)
+        params = get_svm_parameter_suggestions(trial)
         params['epsilon'] = trial.suggest_loguniform('epsilon', 1e-3, 1e2)
         return params

@@ -2,6 +2,7 @@ import os
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from vivid.core import AbstractFeature
 
@@ -25,14 +26,18 @@ class RecordingFeature(AbstractFeature):
         return df_source
 
 
-n_rows = 100
-n_cols = 10
-x = np.random.uniform(size=(n_rows, n_cols))
-y = np.random.uniform(size=(n_rows,))
-df_train = pd.DataFrame(x)
+@pytest.fixture
+def train_data():
+    n_rows = 100
+    n_cols = 10
+    x = np.random.uniform(size=(n_rows, n_cols))
+    y = np.random.uniform(size=(n_rows,))
+    train_df = pd.DataFrame(x)
+    return train_df, y
 
 
-def test_sample_feature():
+def test_sample_feature(train_data):
+    train_df, y = train_data
     feat = SampleFeature()
-    df = feat.fit(df_train, y=y)
-    assert len(df) == len(df_train)
+    df = feat.fit(train_df, y=y)
+    assert len(df) == len(train_data)

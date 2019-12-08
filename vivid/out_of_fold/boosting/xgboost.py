@@ -21,9 +21,9 @@ class XGBoostClassifierOutOfFold(BoostingOufOfFoldFeatureSet):
 
 class XGBoostRegressorOutOfFold(BoostingOufOfFoldFeatureSet):
     model_class = xgb.XGBRegressor
+    eval_metric = 'rmse'
     initial_params = {
         'objective': 'reg:squarederror',
-        'eval_metric': 'mae',
         'learning_rate': .1,
         'colsample_bytree': .7,
         'subsample': .8,
@@ -36,6 +36,7 @@ class XGBoostRegressorOutOfFold(BoostingOufOfFoldFeatureSet):
 
 class OptunaXGBRegressionOutOfFold(FeatureImportanceMixin, BoostingEarlyStoppingMixin, BaseOptunaOutOfFoldFeature):
     model_class = xgb.XGBRegressor
+    eval_metric = 'rmse'
     initial_params = deepcopy(XGBoostRegressorOutOfFold.initial_params)
 
     def generate_model_class_try_params(self, trial):
@@ -46,6 +47,7 @@ class OptunaXGBRegressionOutOfFold(FeatureImportanceMixin, BoostingEarlyStopping
 
 class OptunaXGBClassifierOutOfFold(FeatureImportanceMixin, BoostingEarlyStoppingMixin, BaseOptunaOutOfFoldFeature):
     model_class = xgb.XGBClassifier
+    eval_metric = 'logloss'
     initial_params = deepcopy(XGBoostClassifierOutOfFold.initial_params)
 
     def generate_model_class_try_params(self, trial):

@@ -3,7 +3,7 @@ from .test_base import get_binary, get_boston
 
 
 def test_optuna_svm():
-    oof = SVCOptunaOutOfFold(n_trials=10, name='svm_01')
+    oof = SVCOptunaOutOfFold(n_trials=1, name='svm_01')
     df_train, y = get_binary()
     oof.fit(df_train, y)
 
@@ -16,6 +16,6 @@ class TestSVR:
             oof_feat.fit(df_train, y)
 
     def test_optuna(self):
-        oof_feat = SVROptunaOutOfFold(n_trials=10, name='optuna_svr')
+        oof_feat = SVROptunaOutOfFold(n_trials=1, name='optuna_svr')
         df_train, y = get_boston()
         oof_feat.fit(df_train, y)

@@ -4,26 +4,36 @@
 import os
 
 from vivid.core import MergeFeature, EnsembleFeature, AbstractFeature
-from .fixtures import SampleFeature, df_train, y
+from .conftest import SampleFeature
 from .settings import OUTPUT_DIR
 
 
-def test_merge_feature():
+def test_merge_feature(train_data):
+    """特徴量の merge に関するテスト"""
+    train_df, y = train_data
     feat1 = SampleFeature()
     feat2 = SampleFeature()
     merged = MergeFeature(input_features=[feat1, feat2])
-    pred = merged.predict(df_train)
+    pred = merged.predict(train_df)
+
+    n_cols = 0
+    for feat in [feat1, feat2]:
+        p = feat.predict(train_df)
+        n_cols += p.shape[1]
+    assert pred.shape[1] == n_cols
+
     assert pred.shape[0] == len(y)
     assert not merged.is_recording
 
 
-def test_ensemble_feature():
+def test_ensemble_feature(train_data):
+    train_df, y = train_data
     feat1 = SampleFeature()
     feat2 = SampleFeature()
 
     ensemble = EnsembleFeature([feat1, feat2])
-    pred = ensemble.predict(df_train)
-    assert len(df_train) == len(pred)
+    pred = ensemble.predict(train_df)
+    assert len(train_df) == len(pred)
 
 
 def test_abstract_feature():

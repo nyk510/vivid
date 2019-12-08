@@ -2,6 +2,7 @@ import copy
 import json
 import os
 
+import joblib
 import matplotlib.pyplot as plt
 import numpy as np
 import optuna
@@ -9,7 +10,6 @@ import pandas as pd
 from optuna.trial import Trial
 from sklearn.base import is_regressor
 from sklearn.exceptions import NotFittedError
-from sklearn.externals import joblib
 from sklearn.metrics import mean_squared_error, roc_auc_score
 from sklearn.model_selection import StratifiedKFold, KFold, GroupKFold
 
@@ -124,7 +124,7 @@ class BaseOutOfFoldFeature(AbstractFeature):
         if fold_class is GroupKFold:
             return fold_class(n_splits=self.num_cv).split(X, y, groups)
 
-        return fold_class(n_splits=self.num_cv, random_state=self.fold_seed).split(X, y)
+        return fold_class(n_splits=self.num_cv, random_state=self.fold_seed, shuffle=True).split(X, y)
 
     def get_folds(self, X, y, groups):
         splits = self.get_fold_splitting(X, y, groups)
