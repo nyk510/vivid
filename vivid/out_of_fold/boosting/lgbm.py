@@ -5,6 +5,7 @@ from .mixins import BoostingOufOfFoldFeatureSet
 
 class LGBMClassifierOutOfFold(BoostingOufOfFoldFeatureSet):
     model_class = lgbm.LGBMClassifier
+    eval_metric = 'logloss'
     initial_params = {
         'learning_rate': .1,
         'reg_lambda': 1e-2,
@@ -19,6 +20,7 @@ class LGBMClassifierOutOfFold(BoostingOufOfFoldFeatureSet):
 
 class LGBMRegressorOutOfFold(BoostingOufOfFoldFeatureSet):
     model_class = lgbm.LGBMRegressor
+    eval_metric = 'rmse'
     initial_params = {
         'learning_rate': .1,
         'reg_lambda': 1e-2,
