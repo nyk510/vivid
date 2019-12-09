@@ -2,13 +2,18 @@
 """よく使う評価指標を計算する関数などを定義する
 """
 
-import numpy as np
 from collections import OrderedDict
+
+import numpy as np
 import pandas as pd
 from sklearn.metrics import roc_auc_score, log_loss, accuracy_score, f1_score, mean_absolute_error, mean_squared_error, \
-    r2_score, mean_squared_log_error, median_absolute_error, explained_variance_score
+    r2_score, mean_squared_log_error, median_absolute_error, explained_variance_score, cohen_kappa_score
 
 __author__ = "nyk510"
+
+
+def quadratic_weighted_kappa(y_true, y_pred):
+    return cohen_kappa_score(y_true, y_pred, weights='quadratic')
 
 
 def binary_metrics(y_true, predict_probability, threshold=.5):
