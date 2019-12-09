@@ -1,14 +1,16 @@
 import os
+from typing import List
 
 import pandas as pd
 from sklearn.externals import joblib
 
 from vivid.core import AbstractFeature
+from vivid.utils import timer
 from .atoms import AbstractAtom
 
 
 class Molecule:
-    def __init__(self, atoms, name=None):
+    def __init__(self, atoms: List[AbstractAtom], name=None):
         """
 
         Args:
@@ -62,7 +64,11 @@ class MoleculeFeature(AbstractFeature):
         if test:
             self.load_molecule()
 
-        out_df = self.molecule.generate(df_input=df_source, y=y)
+        out_df = pd.DataFrame()
+
+        for atom in self.molecule.atoms:
+            with timer(self.logger, format_str=f'{str(atom)} ' + '{:.3f}[s]'):
+                out_df = pd.concat([out_df, atom.generate(df_source, y)], axis=1)
 
         if not test and self.is_recording:
             joblib.dump(self.molecule, self.molecule_path)

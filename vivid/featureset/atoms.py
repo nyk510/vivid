@@ -20,6 +20,9 @@ class NotFittedError(Exception):
 class AbstractAtom:
     use_columns = None
 
+    def __str__(self):
+        return self.__class__.__name__
+
     def __init__(self):
         self._check_implement()
 
