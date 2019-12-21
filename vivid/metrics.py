@@ -16,6 +16,14 @@ def quadratic_weighted_kappa(y_true, y_pred):
     return cohen_kappa_score(y_true, y_pred, weights='quadratic')
 
 
+def root_mean_squared_error(y_true, y_pred,
+                            sample_weight=None,
+                            multioutput='uniform_average', squared=True):
+    return mean_squared_error(y_true, y_pred,
+                              sample_weight=sample_weight,
+                              multioutput=multioutput, squared=squared) ** .5
+
+
 def binary_metrics(y_true, predict_probability, threshold=.5):
     """
     二値分類でよく使う評価指標全部入りの DataFrame を作成するメソッド

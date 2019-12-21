@@ -14,7 +14,7 @@ class PricePlusIdAtom(AbstractAtom):
         super(PricePlusIdAtom, self).__init__()
         self.mean = None
 
-    def get_mean(self, y: np.ndarray):
+    def get_mean(self, y=None):
         if y is not None:
             if y is None:
                 raise ValueError()
@@ -22,10 +22,14 @@ class PricePlusIdAtom(AbstractAtom):
             self.mean = m
         return self.mean
 
-    def call(self, df_input, y=None):
+    def fit(self, input_df: pd.DataFrame, y=None):
+        self.get_mean(y)
+        return self
+
+    def transform(self, input_df):
         df_out = pd.DataFrame()
-        df_out['price_plus_id'] = df_input['price'] + df_input['id']
-        df_out['y_mean'] = self.get_mean(y)
+        df_out['price_plus_id'] = input_df['price'] + input_df['id']
+        df_out['y_mean'] = self.get_mean()
 
         return df_out
 
@@ -48,8 +52,8 @@ class TestMolecule:
         class PreprocessAtom(AbstractAtom):
             use_columns = ('price',)
 
-            def call(self, df_input, y=None):
-                out_df = df_input.copy()
+            def transform(self, input_df):
+                out_df = input_df.copy()
                 out_df['price'] = np.where(input_df['price'] > 1, 1, 0)
                 return out_df
 

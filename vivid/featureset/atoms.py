@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from sklearn.base import TransformerMixin
 
 from vivid.text import normalize_neologd
 
@@ -17,7 +18,7 @@ class NotFittedError(Exception):
     pass
 
 
-class AbstractAtom:
+class AbstractAtom(TransformerMixin):
     use_columns = None
 
     def __str__(self):
@@ -27,7 +28,7 @@ class AbstractAtom:
         self._check_implement()
 
     def __call__(self, df_input, y=None):
-        self.call(df_input, y)
+        self.generate(df_input, y)
 
     def _check_implement(self):
         if self.use_columns is None:
@@ -69,23 +70,19 @@ class AbstractAtom:
             raise NotMatchLength('Input length:{}, but output is: {}@{}'.format(len(df_input), len(df_out), self))
         return
 
-    def generate(self, df_input, y=None):
-        self._check_input(df_input, y)
-        df_out = self.call(df_input, y)
-        self._post_generate(df_input, df_out)
-        return df_out
+    def generate(self, input_df: pd.DataFrame, y=None) -> pd.DataFrame:
+        self._check_input(input_df, y)
+        if y is None:
+            out_df = self.transform(input_df)
+        else:
+            out_df = self.fit_transform(input_df, y)
+        self._post_generate(input_df, out_df)
+        return out_df
 
-    def call(self, df_input, y=None):
-        """
+    def fit(self, input_df: pd.DataFrame, y=None):
+        return self
 
-        Args:
-            df_input(pd.DataFrame):
-            y:
-
-        Returns:
-            pd.DataFrame
-
-        """
+    def transform(self, input_df) -> pd.DataFrame:
         raise NotImplementedError()
 
 
@@ -131,12 +128,12 @@ class StringContainsAtom(AbstractAtom):
         except:
             return ''
 
-    def call(self, df_input, y=None):
+    def transform(self, input_df):
         df_out = pd.DataFrame()
 
         for key, queries in self.queryset.items():
 
-            master_docs = [self.run_preprocess(d) for d in df_input[key].values]
+            master_docs = [self.run_preprocess(d) for d in input_df[key].values]
 
             for q in queries:
                 new_colname = '{}_{}'.format(key, q)
@@ -198,12 +195,12 @@ class AbstractMergeAtom(AbstractAtom):
         """
         raise NotImplementedError()
 
-    def call(self, df_input, y=None):
+    def transform(self, input_df):
         df_outer_feature = self.generate_outer_feature()
 
         if self.merge_key not in df_outer_feature.columns:
             df_outer_feature[self.merge_key] = self.df_outer[self.merge_key].copy()
 
-        df_out = pd.merge(df_input[[self.merge_key]], df_outer_feature, on=self.merge_key, how='left')
+        df_out = pd.merge(input_df[[self.merge_key]], df_outer_feature, on=self.merge_key, how='left')
         df_out = df_out.drop(columns=[self.merge_key])
         return df_out

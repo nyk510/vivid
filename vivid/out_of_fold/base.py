@@ -7,15 +7,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 import optuna
 import pandas as pd
+from optuna import Study
 from optuna.trial import Trial
 from sklearn.base import is_regressor
 from sklearn.exceptions import NotFittedError
-from sklearn.metrics import mean_squared_error, roc_auc_score
+from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import StratifiedKFold, KFold, GroupKFold
 
 from vivid.core import AbstractFeature
 from vivid.env import Settings
-from vivid.metrics import binary_metrics, upper_accuracy, regression_metrics
+from vivid.metrics import binary_metrics, upper_accuracy, regression_metrics, root_mean_squared_error
 from vivid.sklearn_extend import PrePostProcessModel
 from vivid.utils import timer
 
@@ -63,7 +64,6 @@ class BaseOutOfFoldFeature(AbstractFeature):
             verbose:
         """
         self.verbose = verbose
-        self.best_score = None
 
         self.is_regression_model = is_regressor(self.model_class())
 
@@ -282,11 +282,16 @@ class BaseOptunaOutOfFoldFeature(BaseOutOfFoldFeature):
 
     def __init__(self, n_trials=200, **kwargs):
         super(BaseOptunaOutOfFoldFeature, self).__init__(**kwargs)
-        self.study = None
+        self.study = None  # type: Study
         self.n_trails = n_trials
 
     def generate_model_class_try_params(self, trial: Trial) -> dict:
         """
+        model の init で渡すパラメータの探索範囲を取得する method
+
+        NOTE:
+            この method で変えられるのはあくまで init に渡す引数だけです.
+            より複雑な条件を変更する際には `get_object` を override することを検討して下さい.
 
         Args:
             trial(Trial):
@@ -295,6 +300,11 @@ class BaseOptunaOutOfFoldFeature(BaseOutOfFoldFeature):
 
         """
         return {}
+
+    def get_score_method(self):
+        if self.is_regression_model:
+            return root_mean_squared_error
+        return roc_auc_score
 
     def evaluate_predict(self, y_true, model, x_valid) -> float:
         """
@@ -313,14 +323,15 @@ class BaseOptunaOutOfFoldFeature(BaseOutOfFoldFeature):
             [Note] Since optuna cant deal maximum objective, the more minimum score is better.
             for example, auc score is better as the score bigger, so must return minus auc.
         """
+        score_method = self.get_score_method()
         if self.is_regression_model:
             y_pred = model.predict(x_valid)
-            return mean_squared_error(y_true, y_pred) ** .5
+            return score_method(y_true, y_pred)
 
         y_pred = model.predict(x_valid, prob=True)
         # shape = (n_samples, n_classes) なので第一次元だけつかう
-        auc = roc_auc_score(y_true, y_pred[:, 1])
-        return -auc
+        score = score_method(y_true, y_pred[:, 1])
+        return -score
 
     def generate_try_parameter(self, trial: Trial) -> dict:
         """

@@ -5,6 +5,7 @@ from unittest import TestCase
 import pandas as pd
 import pytest
 from sklearn.datasets import load_boston, load_breast_cancer
+from sklearn.metrics import mean_absolute_error, mean_squared_log_error
 
 from tests.conftest import SampleFeature, RecordingFeature, RECORDING_DIR
 from vivid.out_of_fold import boosting
@@ -71,6 +72,29 @@ class TestCore(TestCase):
         # モデル読み込みと予測が可能
         feat.load_best_models()
         feat.predict(get_boston()[0])
+
+
+@pytest.mark.parametrize('metric_func', [
+    mean_absolute_error, mean_squared_log_error
+])
+def test_optuna_change_metric(metric_func):
+    """metric を別のものに変えた時に正常に動作するか"""
+
+    class CustomOptuna(OptunaKNeighborRegressorOutOfFold):
+        def get_score_method(self):
+            return metric_func
+
+    X, y = get_boston()
+    model = CustomOptuna(name='optuna', n_trials=1)
+    model.fit(X, y)
+    score = 0.
+    for clf, ((x_train, y_train), (x_valid, y_valid), (idx_train, idx_valid)) in zip(model.fitted_models,
+                                                                                     model.get_folds(X.values, y,
+                                                                                                     groups=None)):
+        pred_i = clf.predict(x_valid)
+        score += metric_func(y_valid, pred_i)
+    score /= model.num_cv
+    assert model.study.best_value == score, f'{model.study.best_params} {clf.model_params}'
 
 
 class TestKneighbors(object):
