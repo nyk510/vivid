@@ -3,6 +3,8 @@
 
 import os
 
+import pandas as pd
+
 from vivid.core import MergeFeature, EnsembleFeature, AbstractFeature
 from .conftest import SampleFeature
 from .settings import OUTPUT_DIR
@@ -65,3 +67,35 @@ def test_abstract_feature():
 
     not_save = NotSave(name='not_save', parent=None, root_dir=parent_dir)
     assert not not_save.is_recording
+
+
+def test_save_train_and_test(train_data, clean):
+    train_df, y = train_data
+
+    class BasicFeature(AbstractFeature):
+        count = 0
+
+        def call(self, df_source: pd.DataFrame, y=None, test=False):
+            self.count += 1
+            return pd.DataFrame(df_source.iloc[:, 0].values)
+
+    feat = BasicFeature(name='basic', parent=None, root_dir=OUTPUT_DIR)
+    assert feat.is_recording
+    assert feat.has_train_meta_path is False
+
+    feat.fit(train_df, y)
+    assert feat.count == 1
+    assert feat.has_train_meta_path
+
+    pred_df = feat.predict(train_df)
+    assert feat.count == 2
+    assert os.path.exists(os.path.join(feat.output_dir, 'test.csv'))
+
+    pred_df2 = feat.predict(train_df.tail(5))
+    assert feat.count == 2
+    assert len(pred_df2) != 5
+    assert len(pred_df2) == len(train_df)
+
+    pred_df3 = feat.predict(train_df.tail(5), force=True)
+    assert len(pred_df3) == 5
+    assert feat.count == 3

@@ -39,6 +39,7 @@ class AbstractFeature(object):
 
         # 学習時に作成した特徴量
         self.feat_on_train_df = None
+        self.feat_on_test_df = None
         self.initialize()
 
     def __str__(self):
@@ -165,6 +166,8 @@ class AbstractFeature(object):
         with timer(self.logger, format_str='for create feature: {:.3f}[s]'):
             df_feat = self.call(df_feat, y)
 
+        if not isinstance(df_feat, pd.DataFrame):
+            raise ValueError('Invalid Return Value from call. Excepted, pd.DataFrame, actually: {}'.format(type(df_feat)))
         self.feat_on_train_df = df_feat
         if self.is_recording:
             os.makedirs(self.output_dir, exist_ok=True)
@@ -180,7 +183,7 @@ class AbstractFeature(object):
 
         return df_feat
 
-    def predict(self, input_df):
+    def predict(self, input_df, force=False):
         """
         未知のデータを特徴量に変換する method
 
@@ -192,11 +195,20 @@ class AbstractFeature(object):
             pd.DataFrame: 特徴量として変換された DataFrame
         """
         self.initialize()
+
+        # 既に作成した特徴がある場合それを返す
+        if not force and self.feat_on_test_df is not None:
+            return self.feat_on_test_df
         if self.has_parent:
-            df = self.parent.predict(input_df)
+            df = self.parent.predict(input_df, force=force)
         else:
             df = input_df
         df_pred = self.call(df, test=True)
+
+        if self.is_recording:
+            os.makedirs(self.output_dir, exist_ok=True)
+            df_pred.to_csv(os.path.join(self.output_dir, 'test.csv'), index=False)
+        self.feat_on_test_df = df_pred
         return df_pred
 
 
