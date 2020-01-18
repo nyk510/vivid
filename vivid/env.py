@@ -19,3 +19,4 @@ class Settings:
     TXT_LOG_LEVEL = os.getenv('TXT_LOG_LEVEL', 'DEBUG')
 
     CACHE_ON_TRAIN = os.getenv('VIVID_CACHE_ON_TRAIN', 'true') == 'true'
+    CACHE_ON_TEST = os.getenv('VIVID_CACHE_ON_TEST', 'true') == 'true'

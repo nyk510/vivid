@@ -3,6 +3,7 @@
 """
 
 import os
+from typing import Union
 
 import pandas as pd
 
@@ -38,7 +39,8 @@ class AbstractFeature(object):
         self._root_dir = root_dir
 
         # 学習時に作成した特徴量
-        self.feat_on_train_df = None
+        self.feat_on_train_df = None  # type: Union[None, pd.DataFrame]
+        self.feat_on_test_df = None  # type: Union[None, pd.DataFrame]
         self.initialize()
 
     def __str__(self):
@@ -181,7 +183,7 @@ class AbstractFeature(object):
 
         return df_feat
 
-    def predict(self, input_df):
+    def predict(self, input_df, recreate=False):
         """
         未知のデータを特徴量に変換する method
 
@@ -193,11 +195,23 @@ class AbstractFeature(object):
             pd.DataFrame: 特徴量として変換された DataFrame
         """
         self.initialize()
+
+        # 既に作成した特徴がある場合それを返す
+        if not recreate and self.feat_on_test_df is not None:
+            return self.feat_on_test_df
         if self.has_parent:
-            df = self.parent.predict(input_df)
+            df = self.parent.predict(input_df, recreate=recreate)
         else:
             df = input_df
         df_pred = self.call(df, test=True)
+
+        if Settings.CACHE_ON_TEST:
+            self.feat_on_test_df = df_pred
+
+        if self.is_recording:
+            os.makedirs(self.output_dir, exist_ok=True)
+            df_pred.to_csv(os.path.join(self.output_dir, 'test.csv'), index=False)
+
         return df_pred
 
 
