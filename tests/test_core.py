@@ -4,6 +4,7 @@
 import os
 
 import pandas as pd
+import pytest
 
 from vivid.core import MergeFeature, EnsembleFeature, AbstractFeature
 from .conftest import SampleFeature
@@ -96,6 +97,37 @@ def test_save_train_and_test(train_data, clean):
     assert len(pred_df2) != 5
     assert len(pred_df2) == len(train_df)
 
-    pred_df3 = feat.predict(train_df.tail(5), force=True)
+    pred_df3 = feat.predict(train_df.tail(5), recreate=True)
     assert len(pred_df3) == 5
     assert feat.count == 3
+
+
+@pytest.mark.parametrize('use_cache', [True, False])
+def test_features_cache(train_data, clean, use_cache: bool):
+    """cache を使うかどうかの選択を行えるかどうかのテスト"""
+    train_df, y = train_data
+
+    class BasicFeature(AbstractFeature):
+        def call(self, df_source: pd.DataFrame, y=None, test=False):
+            return pd.DataFrame(df_source.values[:, 0])
+
+    from vivid.env import Settings
+
+    Settings.CACHE_ON_TEST = use_cache
+    Settings.CACHE_ON_TRAIN = use_cache
+
+    feat = BasicFeature(name='basic', root_dir=OUTPUT_DIR)
+
+    oof_df = feat.fit(train_df, y)
+    test_pred_df = feat.predict(train_df.head(10))
+
+    if use_cache:
+        assert feat.feat_on_train_df is not None
+        assert feat.feat_on_train_df.equals(oof_df)
+
+        assert feat.feat_on_test_df is not None
+        assert feat.feat_on_test_df.equals(test_pred_df)
+
+    else:
+        assert feat.feat_on_train_df is None
+        assert feat.feat_on_test_df is None
