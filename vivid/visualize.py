@@ -91,12 +91,10 @@ def corr_euclid_clustermap(df, n_rows=None, n_cols=None, cmap='viridis', z_score
     return grid
 
 
-def plot_value_count_summary(df, column_name, color='C0'):
+def plot_value_count_summary(df: pd.DataFrame, column_name, color='C0', normalize=False):
     col = df[column_name]
-    vc_i = col.value_counts()
+    vc_i = col.value_counts(dropna=False, normalize=normalize)
     count_null = col.isnull().sum()
-    vc_i = vc_i.append(pd.Series([count_null], index=['null']))
-    vc_i /= len(df)
 
     fig = plt.figure(figsize=(6, 4))
     ax_i = fig.add_subplot(1, 1, 1)
@@ -221,7 +219,7 @@ def plot_auc_curve(df_pred, y_true):
     return fig, ax
 
 
-def visualize_feature_importance(models, columns, plot_type='bar', ax=None, **plot_kwgs):
+def visualize_feature_importance(models, columns, plot_type='bar', ax=None, top_n=None, **plot_kwgs):
     """
     学習済みの Boosting Model から feature importance を plot
 
@@ -229,6 +227,7 @@ def visualize_feature_importance(models, columns, plot_type='bar', ax=None, **pl
         models: 学習済み Boosting モデル (LightGBM or XGBoost)
         columns: 特徴量の名前の List
         plot_type: `"bar"` or `"boxen"`
+        top_n: int が指定された時, 上位 n 件を plot します
         ax: matplotlib.ax object. None のとき新しく fig, ax を作成します
         **plot_kwgs:
 
@@ -255,6 +254,9 @@ def visualize_feature_importance(models, columns, plot_type='bar', ax=None, **pl
 
     order = importance_df.groupby('column').sum()[['feature_importance']].sort_values('feature_importance',
                                                                                       ascending=False).index
+
+    if isinstance(top_n, int):
+        order = order[:top_n]
 
     if ax is None:
         fig = plt.figure(figsize=(7, len(columns) * .3))

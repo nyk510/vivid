@@ -19,7 +19,7 @@ def test_string_contains_atom():
         ['tokyo', 'OSaka', 'osaka', None, 'kobe']
     ], index=['title', 'place']).T
 
-    df_feat = TitleContainsAtom().call(df)
+    df_feat = TitleContainsAtom().generate(df)
 
     assert is_close_to_zero([1, 1, 0, 0, 0], df_feat.values[:, 0])
     assert is_close_to_zero([0, 0, 1, 0, 1], df_feat.values[:, 1])
@@ -57,9 +57,9 @@ class TestAbstractAtom:
         class NotMatchAtom(AbstractAtom):
             use_columns = ('foo', 'bar',)
 
-            def call(self, df_input, y=None):
+            def transform(self, input_df):
                 # return invalid shape datafrme
-                return df_input.sample(5)
+                return input_df.sample(5)
 
         with pytest.raises(NotMatchLength):
             NotMatchAtom().generate(df_input)

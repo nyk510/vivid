@@ -166,9 +166,8 @@ class AbstractFeature(object):
         with timer(self.logger, format_str='for create feature: {:.3f}[s]'):
             df_feat = self.call(df_feat, y)
 
-        if not isinstance(df_feat, pd.DataFrame):
-            raise ValueError('Invalid Return Value from call. Excepted, pd.DataFrame, actually: {}'.format(type(df_feat)))
-        self.feat_on_train_df = df_feat
+        if Settings.CACHE_ON_TRAIN:
+            self.feat_on_train_df = df_feat
         if self.is_recording:
             os.makedirs(self.output_dir, exist_ok=True)
             assert os.path.exists(self.output_dir)

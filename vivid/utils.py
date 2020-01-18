@@ -40,14 +40,17 @@ def set_default_style(style='ticks', font='Noto Sans CJK JP', colors=None):
 
 
 @contextmanager
-def timer(logger=None, format_str='{:.3f}[s]'):
+def timer(logger=None, format_str='{:.3f}[s]', prefix=None, suffix=None):
+    if prefix: format_str = str(prefix) + format_str
+    if suffix: format_str = format_str + str(suffix)
     start = time()
     yield
     d = time() - start
+    out_str = format_str.format(d)
     if logger:
-        logger.info(format_str.format(d))
+        logger.info(out_str)
     else:
-        print(d)
+        print(out_str)
 
 
 def get_logger(name, log_level="DEBUG",
