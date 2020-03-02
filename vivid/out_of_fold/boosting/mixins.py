@@ -12,12 +12,15 @@ from ..base import BaseOutOfFoldFeature
 
 class FeatureImportanceMixin:
     fitted_models: List[PrePostProcessModel]
+    n_importance_plot = 50
 
     def after_kfold_fitting(self, df_source, y, predict):
         self.logger.info(f'save to {self.output_dir}')
 
         if self.is_recording:
-            fig, ax, importance_df = visualize_feature_importance(self.fitted_models, columns=df_source.columns,
+            fig, ax, importance_df = visualize_feature_importance(self.fitted_models,
+                                                                  columns=df_source.columns,
+                                                                  top_n=self.n_importance_plot,
                                                                   plot_type='boxen')
             importance_df.to_csv(os.path.join(self.output_dir, 'feature_importance.csv'), index=False)
             fig.savefig(os.path.join(self.output_dir, 'boxen_feature_importance.png'), dpi=120)

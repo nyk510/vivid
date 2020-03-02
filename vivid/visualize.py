@@ -259,7 +259,7 @@ def visualize_feature_importance(models, columns, plot_type='bar', ax=None, top_
         order = order[:top_n]
 
     if ax is None:
-        fig = plt.figure(figsize=(7, len(columns) * .3))
+        fig = plt.figure(figsize=(7, len(order) * .25))
         ax = fig.add_subplot(111)
     else:
         fig = None
