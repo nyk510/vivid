@@ -313,14 +313,14 @@ class BaseOptunaOutOfFoldFeature(BaseOutOfFoldFeature):
         デフォルト設定の時 regression model では rmse, classification のとき auc を score に用います
 
         Args:
-            y_true(np.array): true value.
+            y_true(np.array): ground truth value.
                 shape = (n_classes,) or (n_samples, n_classes,)
             model(PrePostProcessModel): trained model instance
             x_valid(np.array): validation input data. shape = (n_samples, n_features,)
 
         Returns(float):
             score value.
-            [Note] Since optuna cant deal maximum objective, the more minimum score is better.
+            [Note] Since optuna cant deal with maximum objective, the more minimum score is better.
             for example, auc score is better as the score bigger, so must return minus auc.
         """
         score_method = self.get_score_method()
