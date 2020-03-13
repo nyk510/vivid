@@ -20,7 +20,7 @@ class OneHotEncodingAtom(AbstractAtom):
     def fit(self, input_df: pd.DataFrame, y=None):
         self.mapping_ = OrderedDict()
         for c in self.use_columns:
-            cat = sorted(input_df[c].unique())
+            cat = sorted(input_df[c].dropna().unique())
             self.mapping_[c] = cat
         return self
 
