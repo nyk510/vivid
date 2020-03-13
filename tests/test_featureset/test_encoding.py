@@ -1,19 +1,12 @@
 import numpy as np
 import pandas as pd
 import pytest
-import seaborn as sns
 
 from vivid.featureset.encodings import CountEncodingAtom, OneHotEncodingAtom, InnerMergeAtom
 
 
 class BaseTestCase:
     def setup_method(self):
-        iris = sns.load_dataset('iris')
-        idx = iris.index < 100
-        self.train_df = iris[idx].reset_index(drop=True)
-        self.y = self.train_df.pop('sepal_length')
-        self.test_df = iris[~idx].reset_index(drop=True)
-
         data = [
             [1, 2.1, 'hoge'],
             [1, 1.01, 'spam'],
@@ -51,6 +44,12 @@ class TestCountEncodingAtom(BaseTestCase):
         feat_train = self.atom.generate(self.train_df, self.y)
 
         assert len(self.train_df) == len(feat_train)
+
+    def test_output_values(self):
+        """出力データが正しいことの確認"""
+
+        # 学習データで学習済み
+        self.atom.generate(self.train_df, self.y)
 
         test_data = [
             [1, 'spam'],  # 対応関係があるもの

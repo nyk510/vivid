@@ -9,9 +9,10 @@ from .atoms import AbstractAtom
 class OneHotEncodingAtom(AbstractAtom):
     """use_columns に対して One Hot Encoding を実行する"""
 
-    def __init__(self):
+    def __init__(self, dummpy_na=False):
         super(OneHotEncodingAtom, self).__init__()
         self.mapping_ = None
+        self.dummy_na = False
 
     @property
     def is_fitted(self):
@@ -30,7 +31,7 @@ class OneHotEncodingAtom(AbstractAtom):
         for c in self.use_columns:
             x = input_df[c]
             cat = pd.Categorical(x, categories=self.mapping_[c])
-            df_i = pd.get_dummies(cat, prefix=f'{c}_')
+            df_i = pd.get_dummies(cat, prefix=f'{c}_', dummy_na=self.dummy_na)
             df_i.columns = list(df_i.columns)
             out_df = pd.concat([out_df, df_i], axis=1)
 
