@@ -35,7 +35,7 @@ test:
   script:
     - export LOGLEVEL=INFO
     - docker pull ${TEST_IMAGE}
-    - docker run -v ${PWD}:/workspace ${TEST_IMAGE} ./run_test.sh
+    - docker run -v ${PWD}:/workspace ${TEST_IMAGE} pytest -v --cov=./vivid/
   artifacts:
     name: "$CI_JOB_NAME"
     paths:
