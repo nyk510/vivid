@@ -36,7 +36,7 @@ def get_install_requires():
 
 def get_extra_requires():
     extras = {
-        'test': ['pytest', 'ipython', 'jupyter', 'notebook', 'tornado==5.1.1'],
+        'test': ['pytest', 'pytest-cov', 'ipython', 'jupyter', 'notebook', 'tornado==5.1.1'],
         'document': ['sphinx', 'sphinx_rtd_theme']
     }
     return extras
