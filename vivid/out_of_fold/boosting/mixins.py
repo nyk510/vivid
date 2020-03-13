@@ -7,6 +7,7 @@ from optuna.trial import Trial
 
 from vivid.sklearn_extend import PrePostProcessModel
 from vivid.visualize import visualize_feature_importance
+from .callback import logging_evaluation
 from ..base import BaseOutOfFoldFeature
 
 
@@ -35,6 +36,20 @@ class BoostingEarlyStoppingMixin:
     eval_metric = None
     fit_verbose = 100
 
+    def get_fit_params(self, model_params: dict) -> dict:
+        """モデル学習時 `fit` で渡すパラメータを生成する"""
+        model_params = deepcopy(model_params)
+        eval_metric = model_params.pop('eval_metric', self.eval_metric)
+        return dict(
+            early_stopping_rounds=self.early_stopping_rounds,
+            eval_metric=eval_metric,
+            verbose=0,  # verbose 自体は 0 にして標準の print log が出ないようにする
+            callbacks=[
+                # logger に 学習時のログを残すための callback function
+                logging_evaluation(logger=self.logger, period=self.fit_verbose)
+            ]
+        )
+
     def fit_model(self, X, y, model_params, x_valid, y_valid, cv):
         """
         `PrePostProcessModel` を学習させます.
@@ -49,8 +64,6 @@ class BoostingEarlyStoppingMixin:
         Returns:
 
         """
-        model_params = deepcopy(model_params)
-        eval_metric = model_params.pop('eval_metric', self.eval_metric)
         model = self.create_model(model_params, prepend_name=str(cv),
                                   recording=cv is not None)  # type: PrePostProcessModel
 
@@ -58,11 +71,10 @@ class BoostingEarlyStoppingMixin:
         model._before_fit(X, y)
         x_valid = model.input_transformer.transform(x_valid)
         y_valid = model.target_transformer.transform(y_valid)
+        fit_params = self.get_fit_params(model_params)
         model.fit(X, y,
                   eval_set=[(x_valid, y_valid)],
-                  early_stopping_rounds=self.early_stopping_rounds,
-                  eval_metric=eval_metric,
-                  verbose=None if cv is None else self.fit_verbose)
+                  **fit_params)
         return model
 
 
