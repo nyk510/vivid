@@ -1,23 +1,34 @@
+import numpy as np
+import pandas as pd
 import pytest
-import seaborn as sns
 
 from vivid.featureset.encodings import CountEncodingAtom, OneHotEncodingAtom, InnerMergeAtom
 
 
 class BaseTestCase:
     def setup_method(self):
-        iris = sns.load_dataset('iris')
-        idx = iris.index < 100
-        self.train_df = iris[idx].reset_index(drop=True)
-        self.y = self.train_df.pop('sepal_length')
-        self.test_df = iris[~idx].reset_index(drop=True)
+        data = [
+            [1, 2.1, 'hoge'],
+            [1, 1.01, 'spam'],
+            [2, 10.001, 'ham'],
+            [1, 1.1, 'spam'],
+            [3, 2.5, 'spam'],
+            [1, None, None]
+        ]
+        self.train_df = pd.DataFrame(data, columns=['int1', 'float1', 'str1'])
+        self.y = [1] * len(self.train_df)
+
+        test_data = [
+            data[0], data[2]
+        ]
+        self.test_df = pd.DataFrame(test_data, columns=self.train_df.columns)
 
     def is_generate_idempotency(self, atom):
         """atom のべき等チェック"""
         feat_1 = atom.generate(self.train_df, self.y)
         feat_2 = atom.generate(self.train_df)
 
-        return (feat_1 != feat_2).sum().sum() == 0
+        return feat_1.equals(feat_2)
 
 
 class TestCountEncodingAtom(BaseTestCase):
@@ -25,7 +36,7 @@ class TestCountEncodingAtom(BaseTestCase):
         super(TestCountEncodingAtom, self).setup_method()
 
         class IrisCountEncodingAtom(CountEncodingAtom):
-            use_columns = ['petal_length', 'species']
+            use_columns = ['int1', 'str1']
 
         self.atom = IrisCountEncodingAtom()
 
@@ -34,11 +45,34 @@ class TestCountEncodingAtom(BaseTestCase):
 
         assert len(self.train_df) == len(feat_train)
 
-        feat_test = self.atom.generate(self.test_df)
-        assert len(self.test_df) == len(feat_test)
+    def test_output_values(self):
+        """出力データが正しいことの確認"""
+
+        # 学習データで学習済み
+        self.atom.generate(self.train_df, self.y)
+
+        test_data = [
+            [1, 'spam'],  # 対応関係があるもの
+            [2, 'ham'],
+            [None, None]  # レコードにない or None
+        ]
+
+        ground_truth = [
+            [4, 3],
+            [1, 1],
+            [np.nan, np.nan]
+        ]
+        test_df = pd.DataFrame(test_data, columns=self.atom.use_columns)
+
+        feat_test = self.atom.generate(test_df)
+        assert len(test_df) == len(feat_test)
+        assert pd.DataFrame(ground_truth).equals(pd.DataFrame(feat_test.values))
 
     def test_generate_idempotency(self):
         assert self.is_generate_idempotency(self.atom)
+
+    def test_null_contains(self):
+        feat_train = self.atom.generate(self.train_df, self.y)
 
 
 class TestOneHotEncodingAtom(BaseTestCase):
@@ -46,7 +80,7 @@ class TestOneHotEncodingAtom(BaseTestCase):
         super(TestOneHotEncodingAtom, self).setup_method()
 
         class IrisOneHotAtom(OneHotEncodingAtom):
-            use_columns = ['species']
+            use_columns = ['int1']
 
         self.atom = IrisOneHotAtom()
 
@@ -57,13 +91,20 @@ class TestOneHotEncodingAtom(BaseTestCase):
     def test_generate_idempotency(self):
         assert self.is_generate_idempotency(self.atom)
 
+    def test_null_contains(self):
+        class Atom(OneHotEncodingAtom):
+            use_columns = ['str1']
+
+        atom = Atom()
+        feat_train = atom.generate(self.train_df, self.y)
+
 
 class TestInnerMergeAtom(BaseTestCase):
     def setup_method(self):
         super(TestInnerMergeAtom, self).setup_method()
 
         class IrisInnerMergeAtom(InnerMergeAtom):
-            use_columns = ['petal_length', 'species']
+            use_columns = ['int1', 'float1']
 
         self.atom_class = IrisInnerMergeAtom
 
@@ -71,7 +112,7 @@ class TestInnerMergeAtom(BaseTestCase):
         'mean', 'std', 'median', 'min', 'max'
     ])
     def test_generate(self, agg):
-        atom = self.atom_class(merge_key='species', agg=agg)
+        atom = self.atom_class(merge_key='int1', agg=agg)
 
         atom.generate(self.train_df, self.y)
         atom.generate(self.test_df)
