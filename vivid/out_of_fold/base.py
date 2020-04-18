@@ -151,6 +151,7 @@ class BaseOutOfFoldFeature(AbstractFeature):
         return params
 
     def get_fit_params_on_each_fold(self, model_params: dict,
+                                    training_set: Tuple[np.ndarray, np.ndarray],
                                     validation_set: Tuple[np.ndarray, np.ndarray],
                                     indexes_set: Tuple[np.ndarray, np.ndarray]) -> dict:
         """
@@ -278,6 +279,7 @@ class BaseOutOfFoldFeature(AbstractFeature):
         y_valid = model.target_transformer.transform(y_valid)
 
         fit_params = self.get_fit_params_on_each_fold(model_params,
+                                                      training_set=(X, y),
                                                       validation_set=(x_valid, y_valid),
                                                       indexes_set=indexes_set)
         if fit_params is None:
