@@ -10,8 +10,8 @@ from sklearn.base import TransformerMixin, BaseEstimator
 from sklearn.preprocessing import StandardScaler
 from sklearn.utils.validation import check_is_fitted
 
-from .env import Settings
-from .utils import get_logger
+from ..env import Settings
+from ..utils import get_logger
 
 __author__ = "nyk510"
 

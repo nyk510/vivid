@@ -36,9 +36,9 @@ class BoostingEarlyStoppingMixin:
     eval_metric = None
     fit_verbose = 100
 
-    def get_fit_params_on_each_fold(self, model_params, validation_set, indexes_set):
-        params = super(BoostingEarlyStoppingMixin, self).get_fit_params_on_each_fold(model_params, validation_set,
-                                                                                     indexes_set)
+    def get_fit_params_on_each_fold(self, model_params, training_set, validation_set, indexes_set):
+        params = super(BoostingEarlyStoppingMixin, self) \
+            .get_fit_params_on_each_fold(model_params, training_set, validation_set, indexes_set)
 
         """モデル学習時 `fit` で渡すパラメータを生成する"""
         model_params = deepcopy(model_params)
