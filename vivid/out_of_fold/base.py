@@ -1,6 +1,7 @@
 import copy
 import json
 import os
+from typing import List, Union, Callable, Tuple
 
 import joblib
 import matplotlib.pyplot as plt
@@ -11,59 +12,60 @@ from optuna import Study
 from optuna.trial import Trial
 from sklearn.base import is_regressor
 from sklearn.exceptions import NotFittedError
-from sklearn.metrics import roc_auc_score
-from sklearn.model_selection import StratifiedKFold, KFold, GroupKFold
+from sklearn.metrics import check_scoring
+from sklearn.metrics._scorer import _BaseScorer
+from sklearn.model_selection import KFold
+from sklearn.model_selection import check_cv
 
 from vivid.core import AbstractFeature
 from vivid.env import Settings
-from vivid.metrics import binary_metrics, upper_accuracy, regression_metrics, root_mean_squared_error
+from vivid.metrics import binary_metrics, upper_accuracy, regression_metrics
 from vivid.sklearn_extend import PrePostProcessModel
 from vivid.utils import timer
 
-FOLD_CLASSES = {
-    'kfold': KFold,
-    'stratified': StratifiedKFold,
-    'group': GroupKFold
-}
+
+def create_default_cv():
+    return KFold(n_splits=Settings.N_FOLDS, shuffle=True, random_state=Settings.RANDOM_SEED)
 
 
 class BaseOutOfFoldFeature(AbstractFeature):
+    """Base class that creates Out of Fold features for input data
+    K-Fold CV is performed at the time of train to create K number of models.
+    Returns the average of those predicted values ​​when testing
+
+    The parameters used for learning are determined by the class variable `initial_params`.
+    If you want to use a different variable for each instance, pass the parameter you want to add to `add_init_param`.
     """
-    入力データに対して Out of Fold 特徴量を作成する基底クラス
-    train 時に K-Fold CV を行って K 数だけモデルを作成し
-    テスト時にはそれらの予測値の平均値を返します
-
-    学習に用いるパラメータはクラス変数 `initial_params` で決まります.
-    インスタンスごとに別の変数を使いたい場合, `add_init_param` に追加したいパラメータを渡してください.
-    """
-
-    num_cv = Settings.N_FOLDS
-
-    fold_seed = Settings.RANDOM_SEED
-    fold_group_key = 'id'
-    fold_type = 'default'
-
     initial_params = {}
     model_class = None
     _serialize_filaname = 'fitted_models.joblib'
 
-    def __init__(self, name, parent=None,
+    def __init__(self, name, parent=None, cv=None, groups=None, sample_weight=None,
                  add_init_param=None, root_dir=None, verbose=1):
         """
 
         Args:
-            parent:
-            name:
-            add_param_dist(None | dict):
-                None 以外の dict が与えられると class 変数として定義されている
-                探索空間 `param_dist` をこの値で更新する (dict.update)
-            num_cv_in_search(int):
-                各パラメータ探索での CV の数
-            num_search(int):
-                各パラメータ探索を最大で何回まで行うか
+            name: Model name. Recommended to use a unique string throughout the same project.
+            parent: parent feature instance.
+            cv: Kfold instance or Number or None.
+                If Set None, use default cv strategy.
+            groups:
+                Groups which use in group-k-fold
+                only valid if you set Group K-Fold on cv.
+            sample_weight:
+                sample weight. shape = (n_train,)
+            add_init_param: additional init params. class attribute `init_params` are updated by it.
+            root_dir:
             verbose:
         """
         self.verbose = verbose
+
+        if cv is None:
+            cv = create_default_cv()
+        self.cv = cv
+        self._checked_cv = None
+        self.groups = groups
+        self.sample_weight = sample_weight
 
         self.is_regression_model = is_regressor(self.model_class())
 
@@ -73,7 +75,6 @@ class BaseOutOfFoldFeature(AbstractFeature):
             self._initial_params.update(add_init_param)
 
         super(BaseOutOfFoldFeature, self).__init__(name, parent, root_dir=root_dir)
-        self.fitted_models = []
         self.logger.info(self.name)
         self.finish_fit = False
 
@@ -81,6 +82,12 @@ class BaseOutOfFoldFeature(AbstractFeature):
     def serializer_path(self):
         if self.is_recording:
             return os.path.join(self.output_dir, self._serialize_filaname)
+        return None
+
+    @property
+    def num_cv(self):
+        if self._checked_cv:
+            return self._checked_cv.n_splits
         return None
 
     def load_best_models(self):
@@ -96,102 +103,129 @@ class BaseOutOfFoldFeature(AbstractFeature):
     def save_best_models(self, best_models):
         joblib.dump(best_models, self.serializer_path)
 
-    def get_fold_splitting(self, X, y, groups=None):
-        """
-        学習用データと target の配列から各CVにたいする index 集合を生成する method
+    def get_fold_splitting(self, X, y):
+        if self._checked_cv is None:
+            self._checked_cv = check_cv(self.cv, y, classifier=self.model_class)
+        return self._checked_cv.split(X, y, self.groups)
 
-        Args:
-            X: 学習用データの numpy array
-            y: target numpy array
-            groups: GroupKFold の場合に使用する group
-
-        Returns:
-            List([np.ndarray, np.ndarray])
-        """
-        if len(X) != len(y):
-            raise ValueError(f'X and y must has same samples. actually: {len(X)} {len(y)}')
-
-        fold_name = self.fold_type
-        if fold_name == 'default':
-            if self.is_regression_model:
-                fold_name = 'kfold'
-            else:
-                fold_name = 'stratified'
-        fold_class = FOLD_CLASSES.get(fold_name, None)
-        if fold_class is None:
-            raise ValueError(f'Invalid Fold Name: {self.fold_type}')
-
-        if fold_class is GroupKFold:
-            return fold_class(n_splits=self.num_cv).split(X, y, groups)
-
-        return fold_class(n_splits=self.num_cv, random_state=self.fold_seed, shuffle=True).split(X, y)
-
-    def get_folds(self, X, y, groups):
-        splits = self.get_fold_splitting(X, y, groups)
-
-        for idx_train, idx_valid in splits:
-            x_i, y_i = X[idx_train], y[idx_train]
-            x_valid, y_valid = X[idx_valid], y[idx_valid]
-            yield (x_i, y_i), (x_valid, y_valid), (idx_train, idx_valid)
-
-    def _predict_trained_models(self, df_test):
+    def _predict_trained_models(self, test_df: pd.DataFrame):
         if not self.finish_fit:
             models = self.load_best_models()
         else:
             models = self.fitted_models
 
         if self.is_regression_model:
-            kfold_predicts = [model.predict(df_test.values) for model in models]
+            kfold_predicts = [model.predict(test_df.values) for model in models]
         else:
-            kfold_predicts = [model.predict(df_test.values, prob=True)[:, 1] for model in models]
+            kfold_predicts = [model.predict(test_df.values, prob=True)[:, 1] for model in models]
         preds = np.asarray(kfold_predicts).mean(axis=0)
         df = pd.DataFrame(preds.T, columns=[str(self)])
         return df
 
-    def get_best_model_parameters(self, X, y):
+    def generate_default_model_parameter(self, X, y) -> dict:
         """
-        モデルの学習で使う parameter を取得します.
-        特定の基準にしたがってパラメータを選定したい場合, 例えばグリッドサーチを使ってパラメータを選ぶなどの
-        場合にはこのメソッドをオーバーライドしてください
+        generate model init parameter. It be shared with all Fold.
+        If you like to change parameter or explore more best parameter, override this method.
 
         Args:
-            X:
-            y:
+            X: input feature. shape = (n_train, n_features).
+            y: target. shape = (n_train,)
 
         Returns:
-
+            model parameter dict
         """
         return self._initial_params
 
-    def call(self, df_source, y=None, test=False):
+    def get_params_on_each_fold(self, default_params: dict, indexes_set: Tuple[np.ndarray, np.ndarray]) -> dict:
+        """
+        generate model init parameter (pass to sklearn classifier/regressor constructor) on each fold
+
+        Args:
+            default_params: default model parameter.
+            indexes_set: index set (idx_train, idx_valid).
+
+        Returns:
+            init parameter
+        """
+        params = copy.deepcopy(default_params)
+        return params
+
+    def get_fit_params_on_each_fold(self, model_params: dict,
+                                    validation_set: Tuple[np.ndarray, np.ndarray],
+                                    indexes_set: Tuple[np.ndarray, np.ndarray]) -> dict:
+        """
+        generate fit params (i.e. kwrgs in `clf.fit(X, y, **kwrgs)`) on each fold.
+        By default, set sample_weight when sample_weight is passed to the constructor.
+
+        Args:
+            model_params: model parameters. It pass to model constructor.
+            validation_set: validation (X_valid, y_valid) dataset. tuple of numpy array.
+            indexes_set: index set (idx_train, idx_valid). Use when set sample_weight on each fold.
+
+        Returns:
+            fit parameter dict
+        """
+        params = {}
+        if self.sample_weight is not None:
+            params['sample_weight'] = self.sample_weight[indexes_set[0]]
+        return params
+
+    def call(self, df_source: pd.DataFrame, y=None, test=False) -> pd.DataFrame:
         if test:
             return self._predict_trained_models(df_source)
 
-        x_train, y_train = df_source.values, y
+        X, y = df_source.values, y
+        default_params = self.generate_default_model_parameter(X, y)
 
-        # Note: float32 にしないと dtype が int になり, 予測確率を代入しても 0 のままになるので注意
-        pred_train = np.zeros_like(y_train, dtype=np.float32)
-        params = self.get_best_model_parameters(x_train, y_train)
-
-        for i, ((x_i, y_i), (x_valid, y_valid), (_, idx_valid)) in enumerate(
-            self.get_folds(x_train, y_train, groups=None)):  # [NOTE] Group KFold is not Supported yet
-            self.logger.info('start k-fold: {}/{}'.format(i + 1, self.num_cv))
-
-            with timer(self.logger, format_str='Fold: {}/{}'.format(i + 1, self.num_cv) + ' {:.1f}[s]'):
-                clf = self.fit_model(x_i, y_i, params, x_valid=x_valid, y_valid=y_valid, cv=i)
-
-                if self.is_regression_model:
-                    pred_i = clf.predict(x_valid).reshape(-1)
-                else:
-                    pred_i = clf.predict(x_valid, prob=True)[:, 1]
-
-                pred_train[idx_valid] = pred_i
-                self.fitted_models.append(clf)
+        models, oof = self.run_oof_train(X, y, default_params)
+        self.fitted_models = models
 
         self.finish_fit = True
-        self.after_kfold_fitting(df_source, y, pred_train)
-        df_train = pd.DataFrame(pred_train, columns=[str(self)])
-        return df_train
+        self.after_kfold_fitting(df_source, y, oof)
+        oof_df = pd.DataFrame(oof, columns=[str(self)])
+        return oof_df
+
+    def run_oof_train(self, X, y, default_params) -> ([List[PrePostProcessModel], np.ndarray]):
+        """
+        main training loop.
+
+        Args:
+            X: input feature. shape = (n_samples, n_features)
+            y: target. shape = (n_samples, n_classes)
+            default_params: default model parameter. pass to model constructor (not fit)
+                If you change fit parameter like `eval_metric`, override get_fit_params_on_each_fold.
+
+        Returns:
+            list of fitted models and out-of-fold numpy array.
+        """
+        oof = np.zeros_like(y, dtype=np.float32)
+        splits = self.get_fold_splitting(X, y)
+        models = []
+
+        self.logger.info('CV: {}'.format(str(self._checked_cv)))
+
+        for i, (idx_train, idx_valid) in enumerate(splits):
+            self.logger.info('start k-fold: {}/{}'.format(i + 1, self.num_cv))
+
+            X_i, y_i = X[idx_train], y[idx_train]
+            X_valid, y_valid = X[idx_valid], y[idx_valid]
+
+            with timer(self.logger, format_str='Fold: {}/{}'.format(i + 1, self.num_cv) + ' {:.1f}[s]'):
+                clf = self._fit_model(X_i, y_i,
+                                      default_params=default_params,
+                                      validation_set=(X_valid, y_valid),
+                                      indexes_set=(idx_train, idx_valid),
+                                      prepend_name=i,
+                                      recording=True)
+
+            if self.is_regression_model:
+                pred_i = clf.predict(X_valid).reshape(-1)
+            else:
+                pred_i = clf.predict(X_valid, prob=True)[:, 1]
+
+            oof[idx_valid] = pred_i
+            models.append(clf)
+        return models, oof
 
     def create_model(self, model_params, prepend_name, recording=False) -> PrePostProcessModel:
         target_logscale = model_params.pop('target_logscale', False)
@@ -211,31 +245,44 @@ class BaseOutOfFoldFeature(AbstractFeature):
                                     logger=self.logger)
         return model
 
-    def fit_model(self, X: np.ndarray, y: np.ndarray,
-                  model_params: dict, x_valid, y_valid, cv=None) -> PrePostProcessModel:
+    def _fit_model(self,
+                   X: np.ndarray,
+                   y: np.ndarray,
+                   default_params: dict,
+                   validation_set: tuple,
+                   indexes_set: tuple,
+                   prepend_name=None,
+                   recording=False) -> PrePostProcessModel:
         """
-        `PrePostProcessModel` を学習させます.
-        recordable_model_params には target/input に関するスケーリングを含めたパラメータ情報を与えてください
+        in model_params, add scaling parameters for target / input (ex. target_scaling = False)
 
         Args:
-            X: 特徴量
-            y: ターゲット変数
-            model_params(dict): モデルに渡すパラメータの dict.
-            x_valid:
-            y_valid:
-            cv:
-                None 以外が与えられた時
-                    CVのIndexと解釈し
-                    文字列評価の結果を prefix としてモデルを学習する
-                None のとき
-                    output dir が存在していてもモデルを保存せずに学習します
+            X: training feature. numpy array. shape = (n_train, n_features)
+            y: target. shape = (n_train, n_classes)
+            default_params(dict): parameters pass into model constructor
+            validation_set:
+            indexes_set:
+            prepend_name: prepend name (use on save model)
+            recording: If True, save trained model to local storage.
 
         Returns:
-            trained prepost process model
+            trained model
         """
-        recording = cv is not None
-        model = self.create_model(model_params, prepend_name=str(cv), recording=recording)
-        model.fit(X, y)
+        model_params = self.get_params_on_each_fold(default_params, indexes_set)
+        model = self.create_model(model_params, prepend_name=str(prepend_name), recording=recording)
+
+        # MEMO: validation data are not transform so validation score is invalid (in boosting model, eval_set)
+        model._before_fit(X, y)
+        x_valid, y_valid = validation_set
+        x_valid = model.input_transformer.transform(x_valid)
+        y_valid = model.target_transformer.transform(y_valid)
+
+        fit_params = self.get_fit_params_on_each_fold(model_params,
+                                                      validation_set=(x_valid, y_valid),
+                                                      indexes_set=indexes_set)
+        if fit_params is None:
+            fit_params = {}
+        model.fit(X, y, **fit_params)
         return model
 
     def after_kfold_fitting(self, df_source, y, predict):
@@ -278,12 +325,37 @@ class BaseOptunaOutOfFoldFeature(BaseOutOfFoldFeature):
     """
     Model Based CV Feature with optuna tuning
     """
-    optuna_jobs = -1
+    optuna_jobs = -1  # optuna parallels
+    SCORING_STRATEGY_CHOICES = ['fold', 'whole']  # choice of scoring strategy
 
-    def __init__(self, n_trials=200, **kwargs):
+    def __init__(self, n_trials=200, scoring_strategy='fold', scoring: Union[str, Callable] = 'default',
+                 **kwargs):
+        """
+        Optuna Optimization Model Feature
+
+        Args:
+            n_trials: total number of trials.
+            scoring_strategy:
+                out-of-fold scoring strategy.
+                If set as `"fold"`, the score are calculated each by fold and use mean of them for optimization.
+                If set as `"whole"`, the score is calculated whole data.
+            scoring: scoring method. String or Scoring Object (scoring object must be satisfied check_scoring validation)
+            **kwargs: pass to superclass
+        """
         super(BaseOptunaOutOfFoldFeature, self).__init__(**kwargs)
-        self.study = None  # type: Study
+        self.study = None  # type: Union[Study, None]
         self.n_trails = n_trials
+
+        if scoring_strategy not in self.SCORING_STRATEGY_CHOICES:
+            raise ValueError('`scoring_strategy` must be in {}'.format(','.join(self.SCORING_STRATEGY_CHOICES)))
+        self.scoring_strategy = scoring_strategy
+        if scoring == 'default':
+            if self.is_regression_model:
+                scoring = 'neg_root_mean_squared_error'
+            else:
+                scoring = 'roc_auc'
+        scoring = check_scoring(self.model_class, scoring=scoring, allow_none=False)
+        self.scoring_method = scoring  # type: _BaseScorer
 
     def generate_model_class_try_params(self, trial: Trial) -> dict:
         """
@@ -301,38 +373,6 @@ class BaseOptunaOutOfFoldFeature(BaseOutOfFoldFeature):
         """
         return {}
 
-    def get_score_method(self):
-        if self.is_regression_model:
-            return root_mean_squared_error
-        return roc_auc_score
-
-    def evaluate_predict(self, y_true, model, x_valid) -> float:
-        """
-        calculate model quality in each fold set.
-
-        デフォルト設定の時 regression model では rmse, classification のとき auc を score に用います
-
-        Args:
-            y_true(np.array): ground truth value.
-                shape = (n_classes,) or (n_samples, n_classes,)
-            model(PrePostProcessModel): trained model instance
-            x_valid(np.array): validation input data. shape = (n_samples, n_features,)
-
-        Returns(float):
-            score value.
-            [Note] Since optuna cant deal with maximum objective, the more minimum score is better.
-            for example, auc score is better as the score bigger, so must return minus auc.
-        """
-        score_method = self.get_score_method()
-        if self.is_regression_model:
-            y_pred = model.predict(x_valid)
-            return score_method(y_true, y_pred)
-
-        y_pred = model.predict(x_valid, prob=True)
-        # shape = (n_samples, n_classes) なので第一次元だけつかう
-        score = score_method(y_true, y_pred[:, 1])
-        return -score
-
     def generate_try_parameter(self, trial: Trial) -> dict:
         """
 
@@ -347,9 +387,20 @@ class BaseOptunaOutOfFoldFeature(BaseOutOfFoldFeature):
         model_params.update(add_model_params)
         return model_params
 
-    def get_objective(self, trial, X, y) -> float:
+    def calculate_score(self, y_true, y_pred, sample_weight) -> float:
+        if sample_weight is not None:
+            return self.scoring_method._sign * self.scoring_method._score_func(y_true,
+                                                                               y_pred,
+                                                                               sample_weight=sample_weight,
+                                                                               **self.scoring_method._kwargs)
+        else:
+            return self.scoring_method._sign * self.scoring_method._score_func(y_true,
+                                                                               y_pred,
+                                                                               **self.scoring_method._kwargs)
+
+    def get_objective(self, trial: Trial, X, y) -> float:
         """
-        trial ごとの objective の値を返す関数
+        calculate objective value for each trial
 
         Args:
             trial:
@@ -357,34 +408,46 @@ class BaseOptunaOutOfFoldFeature(BaseOutOfFoldFeature):
             y:
 
         Returns:
+            score of this trial
         """
-        score = .0
         params = self.generate_try_parameter(trial)
+        models, oof = self.run_oof_train(X, y, default_params=params)
 
-        for (x_train, y_train), (x_valid, y_valid), _ in self.get_folds(X, y, groups=None):
-            clf = self.fit_model(x_train, y_train,
-                                 model_params=params, x_valid=x_valid, y_valid=y_valid, cv=None)
-            score += self.evaluate_predict(y_valid, clf, x_valid)
-        return score / self.num_cv
+        scores = []
+        sample_weight = self.sample_weight
+        if self.scoring_strategy == 'whole':
+            score = self.calculate_score(y, oof, sample_weight)
+        elif self.scoring_strategy == 'fold':
+            for idx_train, idx_valid in self.get_fold_splitting(X, y):
+                sample_weight_i = sample_weight[idx_valid] if sample_weight is not None else None
+                score_i = self.calculate_score(y[idx_valid], oof[idx_valid], sample_weight=sample_weight_i)
+                scores.append(score_i)
+            score = np.mean(scores)
+        else:
+            raise ValueError()
+        return score
 
-    def get_best_model_parameters(self, X, y) -> dict:
+    def generate_default_model_parameter(self, X, y) -> dict:
         """
-        PrePostProcessModel に渡す最適なパラメータを Optuna Study を用いて取得する
-        実験 Study の実体の実装は `get_objective` に記述してください
+        The main roop which explore model parameter by optuna.
 
         Args:
             X:
             y:
 
-        Returns(dict):
-            最適なパラメータ
-            `target_logscale` など変換に関するものもこの dict の中に含めてください
+        Returns:
+            best model parameter
         """
         self.logger.info('start optimize by optuna')
 
         self.study = optuna.study.create_study()
         objective = lambda trial: self.get_objective(trial, X, y)
+
+        # Stop model logging while optuna optimization
+        self.logger.disabled = True
         self.study.optimize(objective, n_trials=self.n_trails, n_jobs=self.optuna_jobs)
+        self.logger.disabled = False
+
         self.logger.info('best trial params: {}'.format(self.study.best_params))
         self.logger.info('best value: {}'.format(self.study.best_value))
 

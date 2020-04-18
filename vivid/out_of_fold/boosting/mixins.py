@@ -15,7 +15,7 @@ class FeatureImportanceMixin:
     fitted_models: List[PrePostProcessModel]
     n_importance_plot = 50
 
-    def after_kfold_fitting(self, df_source, y, predict):
+    def after_kfold_fitting(self: BaseOutOfFoldFeature, df_source, y, predict):
         self.logger.info(f'save to {self.output_dir}')
 
         if self.is_recording:
@@ -36,46 +36,25 @@ class BoostingEarlyStoppingMixin:
     eval_metric = None
     fit_verbose = 100
 
-    def get_fit_params(self, model_params: dict) -> dict:
+    def get_fit_params_on_each_fold(self, model_params, validation_set, indexes_set):
+        params = super(BoostingEarlyStoppingMixin, self).get_fit_params_on_each_fold(model_params, validation_set,
+                                                                                     indexes_set)
+
         """モデル学習時 `fit` で渡すパラメータを生成する"""
         model_params = deepcopy(model_params)
         eval_metric = model_params.pop('eval_metric', self.eval_metric)
-        return dict(
+        add_params = dict(
             early_stopping_rounds=self.early_stopping_rounds,
+            eval_set=[validation_set],
             eval_metric=eval_metric,
-            verbose=0,  # verbose 自体は 0 にして標準の print log が出ないようにする
+            verbose=0,  # stop default console log
             callbacks=[
-                # logger に 学習時のログを残すための callback function
+                # write GBDT logging to the output log file
                 logging_evaluation(logger=self.logger, period=self.fit_verbose)
             ]
         )
-
-    def fit_model(self, X, y, model_params, x_valid, y_valid, cv):
-        """
-        `PrePostProcessModel` を学習させます.
-        recordable_model_params には target/input に関するスケーリングを含めたパラメータ情報を与えてください
-
-        Args:
-            X: 特徴量
-            y: ターゲット変数
-            model_params(dict):
-            prepend_name(str):
-
-        Returns:
-
-        """
-        model = self.create_model(model_params, prepend_name=str(cv),
-                                  recording=cv is not None)  # type: PrePostProcessModel
-
-        # hack: validation data に対して transform が聞かないため, before fit で学習して fit 前に変換を実行する
-        model._before_fit(X, y)
-        x_valid = model.input_transformer.transform(x_valid)
-        y_valid = model.target_transformer.transform(y_valid)
-        fit_params = self.get_fit_params(model_params)
-        model.fit(X, y,
-                  eval_set=[(x_valid, y_valid)],
-                  **fit_params)
-        return model
+        params.update(add_params)
+        return params
 
 
 class BoostingOufOfFoldFeatureSet(FeatureImportanceMixin, BoostingEarlyStoppingMixin, BaseOutOfFoldFeature):

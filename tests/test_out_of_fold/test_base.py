@@ -2,14 +2,17 @@ import os
 import shutil
 from unittest import TestCase
 
+import numpy as np
 import pandas as pd
 import pytest
 from sklearn.datasets import load_boston, load_breast_cancer
+from sklearn.metrics import make_scorer
 from sklearn.metrics import mean_absolute_error, mean_squared_log_error
 
 from tests.conftest import SampleFeature, RecordingFeature, RECORDING_DIR
 from vivid.out_of_fold import boosting
 from vivid.out_of_fold.base import NotFittedError
+from vivid.out_of_fold.ensumble import RFRegressorFeatureOutOfFold
 from vivid.out_of_fold.kneighbor import OptunaKNeighborRegressorOutOfFold
 
 base_feat = SampleFeature()
@@ -73,6 +76,15 @@ class TestCore(TestCase):
         feat.load_best_models()
         feat.predict(get_boston()[0])
 
+    def test_add_sample_weight(self):
+        df, y = get_boston()
+        sample_weight = df.values[:, 0]
+        model = RFRegressorFeatureOutOfFold(name='rf', sample_weight=sample_weight)
+        model.fit(df, y)
+
+        for clf, (idx_train, idx_valid) in zip(model.fitted_models, model.get_fold_splitting(df.values, y)):
+            assert np.array_equal(clf.fit_params_.get('sample_weight', None), sample_weight[idx_train])
+
 
 @pytest.mark.parametrize('metric_func', [
     mean_absolute_error, mean_squared_log_error
@@ -80,21 +92,41 @@ class TestCore(TestCase):
 def test_optuna_change_metric(metric_func):
     """metric を別のものに変えた時に正常に動作するか"""
 
-    class CustomOptuna(OptunaKNeighborRegressorOutOfFold):
-        def get_score_method(self):
-            return metric_func
+    df, y = get_boston()
+    scoring = make_scorer(metric_func, greater_is_better=False)
+    model = OptunaKNeighborRegressorOutOfFold(name='optuna', n_trials=1, scoring=scoring,
+                                              scoring_strategy='fold')
+    model.fit(df, y)
 
-    X, y = get_boston()
-    model = CustomOptuna(name='optuna', n_trials=1)
-    model.fit(X, y)
-    score = 0.
-    for clf, ((x_train, y_train), (x_valid, y_valid), (idx_train, idx_valid)) in zip(model.fitted_models,
-                                                                                     model.get_folds(X.values, y,
-                                                                                                     groups=None)):
-        pred_i = clf.predict(x_valid)
-        score += metric_func(y_valid, pred_i)
-    score /= model.num_cv
-    assert model.study.best_value == score, f'{model.study.best_params} {clf.model_params}'
+    X = df.values
+    scores = []
+    for clf, (idx_train, idx_valid) in zip(model.fitted_models, model.get_fold_splitting(X, y)):
+        pred_i = clf.predict(X[idx_valid])
+        score = metric_func(y[idx_valid], pred_i)
+        scores.append(score)
+    score = np.mean(scores)
+    np.testing.assert_almost_equal(-score, model.study.best_value, decimal=7)
+
+
+def test_change_scoring_strategy():
+    """check same scoring value in convex objective"""
+    df, y = get_boston()
+    model = OptunaKNeighborRegressorOutOfFold(name='test', n_trials=1,
+                                              scoring='neg_root_mean_squared_error',
+                                              scoring_strategy='whole')
+    oof_df = model.fit(df, y)
+    from sklearn.metrics import mean_squared_error
+
+    assert - mean_squared_error(y, oof_df.values[:, 0]) ** .5 == model.study.best_value
+
+
+def test_optuna_min_max_shift():
+    df, y = get_boston()
+    scoring = make_scorer(mean_absolute_error, greater_is_better=False)
+    model = OptunaKNeighborRegressorOutOfFold(name='optuna', n_trials=10, scoring=scoring)
+    model.fit(df, y)
+    log_df = model.study.trials_dataframe()
+    assert (log_df['value'] > 0).sum() == 0, log_df
 
 
 class TestKneighbors(object):
