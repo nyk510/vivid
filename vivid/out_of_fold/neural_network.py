@@ -52,5 +52,5 @@ class SkerasClassifierOutOfFoldFeature(SkerasOutOfFoldMixin, BaseOutOfFoldFeatur
         return params
 
 
-class SkerasRegressorOutOfFoldFeature(BaseOutOfFoldFeature):
+class SkerasRegressorOutOfFoldFeature(SkerasOutOfFoldMixin, BaseOutOfFoldFeature):
     model_class = SkerasRegressor
