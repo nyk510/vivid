@@ -107,8 +107,6 @@ class PrePostProcessModel(BaseEstimator):
             use_scaling(bool):
             num_cv_in_search:
             scoring(str): 探索時に使用する metrics
-            num_max_search(int): パラメータの探索空間の最大値. これを超えると random search を採用し,
-                num_max_search ぶんだけしか探索を行わない
             logger:
         """
         self.model_class = model_class
@@ -191,6 +189,7 @@ class PrePostProcessModel(BaseEstimator):
         """
         clf = self.create_model()
         x, y = self._before_fit(x_train, y_train)
+        self.fit_params_ = kwargs
         self.fitted_model_ = clf.fit(x, y, **kwargs)
         if self.is_recording:
             self.save_trained_model()
