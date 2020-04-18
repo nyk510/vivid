@@ -29,7 +29,10 @@ def get_install_requires():
         'joblib',
         'optuna',
         'xgboost',
-        'lightgbm'
+        'lightgbm',
+        'keras',
+        'tensorflow'
+
     ]
     return install_requires
 
