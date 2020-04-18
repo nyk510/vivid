@@ -108,16 +108,6 @@ class AbstractFeature(object):
         return self.parent is not None
 
     def call(self, df_source: pd.DataFrame, y=None, test=False) -> pd.DataFrame:
-        """
-
-        Args:
-            df_source(pd.DataFrame):
-            y(np.array): shape = (n_samples, )
-            test(boolean):
-
-        Returns:
-            pd.DataFrame
-        """
         raise NotImplementedError()
 
     def initialize(self):
@@ -165,7 +155,7 @@ class AbstractFeature(object):
             df_feat = input_df
 
         with timer(self.logger, format_str='for create feature: {:.3f}[s]'):
-            df_feat = self.call(df_feat, y)
+            df_feat = self.call(df_feat, y, test=False)
 
         if Settings.CACHE_ON_TRAIN:
             self.feat_on_train_df = df_feat
