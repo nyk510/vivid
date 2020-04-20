@@ -16,19 +16,20 @@ class SkerasOutOfFoldMixin:
         'workers': -1
     }
 
+    def get_keras_callbacks(self, training_set, validation_set):
+        return [
+            ReduceLROnPlateau(patience=5, verbose=1)
+        ]
+
     def get_fit_params_on_each_fold(self, model_params: dict,
                                     training_set: Tuple[np.ndarray, np.ndarray],
                                     validation_set: Tuple[np.ndarray, np.ndarray],
                                     indexes_set: Tuple[np.ndarray, np.ndarray]) -> dict:
         params = super() \
             .get_fit_params_on_each_fold(model_params, training_set, validation_set, indexes_set)
-        callbacks = [
-            ROCAucCallback(training_data=training_set, validation_data=validation_set),
-            ReduceLROnPlateau(patience=5, verbose=1)
-        ]
 
         add_params = {
-            'callbacks': callbacks,
+            'callbacks': self.get_keras_callbacks(training_set, validation_set),
             'validation_data': validation_set,
         }
 
@@ -38,6 +39,12 @@ class SkerasOutOfFoldMixin:
 
 class SkerasClassifierOutOfFoldFeature(SkerasOutOfFoldMixin, BaseOutOfFoldFeature):
     model_class = SkerasClassifier
+
+    def get_keras_callbacks(self, training_set, validation_set):
+        return [
+            *super(SkerasClassifierOutOfFoldFeature, self).get_keras_callbacks(training_set, validation_set),
+            ROCAucCallback(training_data=training_set, validation_data=validation_set),
+        ]
 
     def get_fit_params_on_each_fold(self, model_params: dict,
                                     training_set: Tuple[np.ndarray, np.ndarray],

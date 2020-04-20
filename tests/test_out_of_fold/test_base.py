@@ -1,19 +1,23 @@
 import os
 import shutil
+from typing import Type
 from unittest import TestCase
 
 import numpy as np
 import pandas as pd
 import pytest
+from parameterized import parameterized
 from sklearn.datasets import load_boston, load_breast_cancer
 from sklearn.metrics import make_scorer
 from sklearn.metrics import mean_absolute_error, mean_squared_log_error
 
 from tests.conftest import SampleFeature, RecordingFeature, RECORDING_DIR
 from vivid.out_of_fold import boosting
-from vivid.out_of_fold.base import NotFittedError
+from vivid.out_of_fold.base import NotFittedError, BaseOutOfFoldFeature
 from vivid.out_of_fold.ensumble import RFRegressorFeatureOutOfFold
 from vivid.out_of_fold.kneighbor import OptunaKNeighborRegressorOutOfFold
+from vivid.out_of_fold.linear import RidgeOutOfFold
+from vivid.out_of_fold.neural_network import SkerasRegressorOutOfFoldFeature, SkerasClassifierOutOfFoldFeature
 
 base_feat = SampleFeature()
 
@@ -55,26 +59,48 @@ class TestCore(TestCase):
         output_repeat_df = feat.fit(df, y)
         self.assertIs(output_df, output_repeat_df, feat)
 
-    def test_recording_with_feature(self):
+    @parameterized.expand([
+        (RidgeOutOfFold, {'n_trials': 1}),
+        (OptunaKNeighborRegressorOutOfFold, {'n_trials': 1}),
+        (boosting.XGBoostRegressorOutOfFold,),
+        (boosting.XGBoostClassifierOutOfFold,),
+        (boosting.LGBMRegressorOutOfFold,),
+        (boosting.LGBMClassifierOutOfFold,),
+        (RFRegressorFeatureOutOfFold,),
+        (SkerasRegressorOutOfFoldFeature, {'add_init_param': {'epochs': 1}}),
+        (SkerasClassifierOutOfFoldFeature, {'add_init_param': {'epochs': 1}})
+    ])
+    def test_recording(self, model_class: Type[BaseOutOfFoldFeature], params=None):
+        if params is None: params = {}
         recording_feature = RecordingFeature()
-        feat = OptunaKNeighborRegressorOutOfFold(parent=recording_feature, name='serialize_1', n_trials=1)
+        clf = model_class(parent=recording_feature, name='serialize_1', **params)
 
         with pytest.raises(NotFittedError):
-            feat.load_best_models()
+            clf.load_best_models()
 
         # 学習前なのでモデルの重みはあってはならない
-        self.assertFalse(os.path.exists(feat.serializer_path), feat)
-        feat.fit(*get_boston())
+        assert not os.path.exists(clf.serializer_path), clf
 
-        self.assertTrue(feat.is_recording, feat)
-        self.assertTrue(feat.finish_fit, feat)
+        if clf.is_regression_model:
+            df, y = get_boston()
+        else:
+            df, y = get_binary()
+        clf.fit(df, y)
+
+        assert clf.is_recording, clf
+        assert clf.finish_fit, clf
 
         # 学習後なのでモデルの重みが無いとだめ
-        self.assertTrue(os.path.exists(feat.serializer_path), feat)
+        assert os.path.exists(clf.serializer_path), clf
 
         # モデル読み込みと予測が可能
-        feat.load_best_models()
-        feat.predict(get_boston()[0])
+        clf.load_best_models()
+        pred1 = clf.predict(df)
+
+        # 再度定義しなおしても推論は可能 (ローカルからモデルを呼び出して来ることができる)
+        clf = model_class(parent=recording_feature, name='serialize_1', **params)
+        pred2 = clf.predict(df)
+        assert pred1.equals(pred2), (pred1, pred2)
 
     def test_add_sample_weight(self):
         df, y = get_boston()

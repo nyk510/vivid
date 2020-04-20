@@ -94,11 +94,16 @@ class BaseOutOfFoldFeature(AbstractFeature):
         if self.output_dir is None:
             raise NotFittedError('Feature run without recording. Must Set Output Dir. ')
 
-        if os.path.exists(self.serializer_path):
-            return joblib.load(self.serializer_path)
-
-        raise NotFittedError('Model Serialized file {} not found.'.format(self.serializer_path) +
-                             'Run fit before load model.')
+        if not os.path.exists(self.serializer_path):
+            raise NotFittedError('Model Serialized file {} not found.'.format(self.serializer_path) +
+                                 'Run fit before load model.')
+        param_list = joblib.load(self.serializer_path)
+        models = []
+        for params in param_list:
+            model = self.create_model({}, prepend_name=params['prepend_name'], recording=True)
+            model.load_trained_model()
+            models.append(model)
+        return models
 
     def save_best_models(self, best_models):
         joblib.dump(best_models, self.serializer_path)
@@ -293,8 +298,13 @@ class BaseOutOfFoldFeature(AbstractFeature):
         except Exception as e:
             self.logger.warn(e)
 
-        if self.is_recording:
-            self.save_best_models(self.fitted_models)
+        if not self.is_recording:
+            return
+
+        model_outputs = []
+        for m in self.fitted_models:
+            model_outputs.append(m.get_params(deep=False))
+        joblib.dump(model_outputs, self.serializer_path)
 
     def show_metrics(self, y, prob_predict):
         if self.is_regression_model:
