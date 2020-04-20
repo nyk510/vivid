@@ -6,9 +6,7 @@ with open(os.path.join(os.path.dirname(__file__), 'README.md')) as readme:
     README = readme.read()
 
 
-def get_version():
-    # type: () -> str
-
+def get_version() -> str:
     version_filepath = os.path.join(os.path.dirname(__file__), 'vivid', 'version.py')
     with open(version_filepath) as f:
         for line in f:
@@ -39,7 +37,7 @@ def get_install_requires():
 
 def get_extra_requires():
     extras = {
-        'test': ['pytest', 'pytest-cov', 'parametarized', 'ipython', 'jupyter', 'notebook', 'tornado==5.1.1'],
+        'test': ['pytest', 'pytest-cov', 'parameterized', 'ipython', 'jupyter', 'notebook', 'tornado==5.1.1'],
         'document': ['sphinx', 'sphinx_rtd_theme']
     }
     return extras
