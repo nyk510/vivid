@@ -7,7 +7,8 @@ from collections import OrderedDict
 import numpy as np
 import pandas as pd
 from sklearn.metrics import roc_auc_score, log_loss, accuracy_score, f1_score, mean_absolute_error, mean_squared_error, \
-    r2_score, mean_squared_log_error, median_absolute_error, explained_variance_score, cohen_kappa_score
+    r2_score, mean_squared_log_error, median_absolute_error, explained_variance_score, cohen_kappa_score, \
+    average_precision_score, precision_score, recall_score
 
 __author__ = "nyk510"
 
@@ -24,7 +25,7 @@ def root_mean_squared_error(y_true, y_pred,
                               multioutput=multioutput, squared=squared) ** .5
 
 
-def binary_metrics(y_true, predict_probability, threshold=.5):
+def binary_metrics(y_true, predict_probability, threshold=.5) -> pd.DataFrame:
     """
     二値分類でよく使う評価指標全部入りの DataFrame を作成するメソッド
     Args:
@@ -36,17 +37,34 @@ def binary_metrics(y_true, predict_probability, threshold=.5):
         pd.DataFrame
 
     """
-    auc = roc_auc_score(y_true, predict_probability)
-    loss = log_loss(y_true, predict_probability)
     predict_label = np.where(predict_probability > threshold, 1, 0)
-    f1 = f1_score(y_true, predict_label)
-    acc = accuracy_score(y_true, predict_label)
-    df_metrics = pd.DataFrame([auc, loss, f1, acc], index=['auc', 'log_loss', 'f1_score', 'accuracy'],
-                              columns=['score'])
-    return df_metrics
+    none_prob_functions = [
+        accuracy_score,
+        f1_score,
+        precision_score,
+        recall_score
+    ]
+
+    prob_functions = [
+        roc_auc_score,
+        log_loss,
+        average_precision_score
+    ]
+
+    scores, indexes = [], []
+    for f in none_prob_functions:
+        score = f(y_true, predict_label)
+        scores.append(score)
+        indexes.append(f.__name__)
+    for f in prob_functions:
+        score = f(y_true, predict_probability)
+        scores.append(score)
+        indexes.append(f.__name__)
+
+    return pd.DataFrame(data=scores, index=indexes, columns=['score'])
 
 
-def regression_metrics(y_true, predict):
+def regression_metrics(y_true, predict) -> pd.DataFrame:
     name_func_map = OrderedDict({
         'rmse': lambda *x: mean_squared_error(*x) ** .5
     })
