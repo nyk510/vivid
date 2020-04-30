@@ -3,12 +3,9 @@
 """
 
 from contextlib import contextmanager
-from glob import glob
 from logging import getLogger, StreamHandler, FileHandler, Formatter
 from time import time
 
-import numpy as np
-import pandas as pd
 import requests
 import seaborn as sns
 from tqdm import tqdm
@@ -94,47 +91,6 @@ def get_train_valid_set(fold, X, y):
         item = (X[train_idx], y[train_idx]), (X[test_idx], y[test_idx]), (train_idx, test_idx)
         items.append(item)
     return items
-
-
-def get_sample_pos_weight(y):
-    """
-
-    Args:
-        y(np.ndarray): shape = (n_samples, )
-
-    Returns:
-        float
-    """
-    unique, count = np.unique(y, return_counts=True)
-    y_sample_weight = dict(zip(unique, count))
-    sample_pos_weight = y_sample_weight[0] / y_sample_weight[1]
-    return sample_pos_weight
-
-
-def read_multiple_csv(glob_path, max_cols=1):
-    """
-    複数の csv を読み込んで列方向に merge する
-
-    Args:
-        glob_path(str): 読み込むファイルへのパスの glob text.
-            例えば `"./data/**/*.csv"` など
-        max_cols(int): これ以上の column を持つ csv は skip する
-            例えば 1 が設定されるとカラムが 2 以上のものを無視する
-
-    Returns:
-
-    """
-    path_list = glob(glob_path)
-    df = pd.DataFrame()
-    for p in path_list:
-        _df = pd.read_csv(p)
-        if len(_df.columns) > max_cols:
-            continue
-        df = pd.concat([df, _df], axis=1)
-    return df
-
-
-logger = get_logger(__name__)
 
 
 def download_from_gdrive(id, destination):
