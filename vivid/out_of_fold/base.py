@@ -1,6 +1,7 @@
 import copy
 import json
 import os
+from collections.abc import Iterable
 from typing import List, Union, Callable, Tuple
 
 import joblib
@@ -14,8 +15,7 @@ from sklearn.base import is_regressor
 from sklearn.exceptions import NotFittedError
 from sklearn.metrics import check_scoring
 from sklearn.metrics._scorer import _BaseScorer
-from sklearn.model_selection import KFold
-from sklearn.model_selection import check_cv
+from sklearn.model_selection import KFold, check_cv
 
 from vivid.core import AbstractFeature
 from vivid.env import Settings
@@ -47,7 +47,7 @@ class BaseOutOfFoldFeature(AbstractFeature):
         Args:
             name: Model name. Recommended to use a unique string throughout the same project.
             parent: parent feature instance.
-            cv: Kfold instance or Number or None.
+            cv: Kfold instance or Number or Iterable or None.
                 If Set None, use default cv strategy.
             groups:
                 Groups which use in group-k-fold
@@ -108,7 +108,10 @@ class BaseOutOfFoldFeature(AbstractFeature):
     def save_best_models(self, best_models):
         joblib.dump(best_models, self.serializer_path)
 
-    def get_fold_splitting(self, X, y):
+    def get_fold_splitting(self, X, y) -> Iterable:
+        # If cv is iterable object, convert to list and return
+        if isinstance(self.cv, Iterable):
+            return list(self.cv)
         if self._checked_cv is None:
             self._checked_cv = check_cv(self.cv, y, classifier=self.model_class)
         return self._checked_cv.split(X, y, self.groups)
