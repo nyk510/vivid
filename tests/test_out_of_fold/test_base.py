@@ -10,14 +10,15 @@ from parameterized import parameterized
 from sklearn.datasets import load_boston, load_breast_cancer
 from sklearn.metrics import make_scorer
 from sklearn.metrics import mean_absolute_error, mean_squared_log_error
+from sklearn.model_selection import KFold, StratifiedKFold
 
-from tests.conftest import SampleFeature, RecordingFeature, RECORDING_DIR
+from tests.conftest import SampleFeature, RECORDING_DIR, RecordingFeature
 from vivid.out_of_fold import boosting
+from vivid.out_of_fold import neural_network
 from vivid.out_of_fold.base import NotFittedError, BaseOutOfFoldFeature
 from vivid.out_of_fold.ensumble import RFRegressorFeatureOutOfFold
 from vivid.out_of_fold.kneighbor import OptunaKNeighborRegressorOutOfFold
 from vivid.out_of_fold.linear import RidgeOutOfFold
-from vivid.out_of_fold.neural_network import SkerasRegressorOutOfFoldFeature, SkerasClassifierOutOfFoldFeature
 
 base_feat = SampleFeature()
 
@@ -67,8 +68,8 @@ class TestCore(TestCase):
         (boosting.LGBMRegressorOutOfFold,),
         (boosting.LGBMClassifierOutOfFold,),
         (RFRegressorFeatureOutOfFold,),
-        (SkerasRegressorOutOfFoldFeature, {'add_init_param': {'epochs': 1}}),
-        (SkerasClassifierOutOfFoldFeature, {'add_init_param': {'epochs': 1}})
+        (neural_network.SkerasRegressorOutOfFoldFeature, {'add_init_param': {'epochs': 1}}),
+        (neural_network.SkerasClassifierOutOfFoldFeature, {'add_init_param': {'epochs': 1}})
     ])
     def test_recording(self, model_class: Type[BaseOutOfFoldFeature], params=None):
         if params is None: params = {}
@@ -112,12 +113,40 @@ class TestCore(TestCase):
             assert np.array_equal(clf.fit_params_.get('sample_weight', None), sample_weight[idx_train])
 
 
+@parameterized.expand([
+    (KFold(n_splits=2),),
+    (StratifiedKFold(n_splits=10, shuffle=True, random_state=71),),  # Must set random state
+])
+def test_custom_cv_class(cv):
+    df, y = get_binary()
+    clf = boosting.XGBoostClassifierOutOfFold(name='xgb', cv=cv)
+
+    for origin, model in zip(cv.split(df.values, y), clf.get_fold_splitting(df.values, y)):
+        assert np.array_equal(origin[0], model[0])
+        assert np.array_equal(origin[1], model[1])
+
+
+def test_custom_cv_as_list():
+    """can set custom cv as list of train / test indexes"""
+    cv = [
+        [1, 2, 3], [4, 5],
+        [2, 4, 5], [1, 3]
+    ]
+    clf = boosting.XGBoostClassifierOutOfFold(name='xgb', cv=cv)
+
+    X = np.random.uniform(size=(5, 10))
+    y = np.random.uniform(size=(5,))
+
+    for cv_idxes, clf_indexes in zip(cv, clf.get_fold_splitting(X, y)):
+        assert np.array_equal(cv_idxes[0], clf_indexes[0])
+        assert np.array_equal(cv_idxes[1], clf_indexes[1])
+
+
 @pytest.mark.parametrize('metric_func', [
-    mean_absolute_error, mean_squared_log_error
+    mean_absolute_error,
+    mean_squared_log_error
 ])
 def test_optuna_change_metric(metric_func):
-    """metric を別のものに変えた時に正常に動作するか"""
-
     df, y = get_boston()
     scoring = make_scorer(metric_func, greater_is_better=False)
     model = OptunaKNeighborRegressorOutOfFold(name='optuna', n_trials=1, scoring=scoring,
