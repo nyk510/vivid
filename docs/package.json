@@ -1,0 +1,15 @@
+{
+  "name": "vivid",
+  "version": "1.0.0",
+  "main": "index.js",
+  "repository": "git@gitlab.com:nyker510/analysis-template.git",
+  "author": "nyker510 <takamail53@gmail.com>",
+  "license": "MIT",
+  "scripts": {
+    "docs:dev": "vuepress dev src",
+    "docs:build": "vuepress build src"
+  },
+  "devDependencies": {
+    "vuepress": "^1.4.1"
+  }
+}

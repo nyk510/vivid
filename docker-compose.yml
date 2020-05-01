@@ -14,3 +14,14 @@ services:
     environment:
       - PYTHONPATH=/workspace
     tty: true
+
+  docs:
+    build: ./docs
+    container_name: vivid-docs
+    volumes:
+      - ./docs:/var/www/docs
+    tty: true
+    ports:
+      - ${DOCS_PORT}:3000
+    env_file:
+      - .env

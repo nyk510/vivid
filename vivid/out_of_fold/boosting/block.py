@@ -5,9 +5,9 @@ from vivid.core import AbstractFeature, EnsembleFeature
 from vivid.out_of_fold.base import BaseOutOfFoldFeature
 
 
-def create_boosting_seed_blocks(parent: AbstractFeature,
-                                prefix: str,
-                                feature_class: Type[BaseOutOfFoldFeature],
+def create_boosting_seed_blocks(feature_class: Type[BaseOutOfFoldFeature],
+                                parent: AbstractFeature = None,
+                                prefix: str = None,
                                 add_init_params=None,
                                 n_seeds=5):
     """
@@ -16,19 +16,23 @@ def create_boosting_seed_blocks(parent: AbstractFeature,
     + それらのアンサンブル の合計 n_seeds + 1 の配列の特徴量を返す
 
     Args:
-        parent(AbstractFeature):
-        prefix(str):
         feature_class(BaseOutOfFoldFeature):
             out of fold feature を継承した, boosting feature.
             boosting 以外では意味をなさないことに注意して下さい.
             (random_state によって seed が代わりそれを averaging することに意味があるアルゴリズムのみが対象です.)
-        add_init_params(dict):
+        parent(AbstractFeature):
+        prefix(str):
+        add_init_params(dict): update init params each averaging feature.
+        n_seeds(int): number of averaging feature. must be over zero.
 
-    Returns(List[AbstractFeature]:
+    Returns(List[AbstractFeature]):
     """
     if issubclass(type(feature_class), AbstractFeature):
-        raise ValueError('invalid feature class. must set AbstractFeature class.')
-
+        raise ValueError(f'invalid `feature_class` argument. `feature_class` must be AbstractFeature subclass.')
+    if n_seeds < 0:
+        raise ValueError(f'Invalid `n_seeds`. Must be over zero.')
+    if prefix is None:
+        prefix = str(feature_class.__class__.__name__)
     feats = []
     for seed_id in range(n_seeds):
         add_param = deepcopy(add_init_params)
@@ -39,6 +43,7 @@ def create_boosting_seed_blocks(parent: AbstractFeature,
         feats.append(feature_class(name=f'{prefix}_{seed_id:02d}', parent=parent, add_init_param=add_param))
 
     if n_seeds > 1:
-        ensemble_feat = EnsembleFeature(feats[:], name=f'{prefix}_ensemble', root_dir=parent.root_dir)
+        root_dir = parent.root_dir if parent is not None else None
+        ensemble_feat = EnsembleFeature(feats[:], name=f'{prefix}_ensemble', root_dir=root_dir)
         feats.append(ensemble_feat)
     return feats

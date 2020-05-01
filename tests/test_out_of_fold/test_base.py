@@ -14,7 +14,6 @@ from sklearn.model_selection import KFold, StratifiedKFold
 
 from tests.conftest import SampleFeature, RECORDING_DIR, RecordingFeature
 from vivid.out_of_fold import boosting
-from vivid.out_of_fold import neural_network
 from vivid.out_of_fold.base import NotFittedError, BaseOutOfFoldFeature
 from vivid.out_of_fold.ensumble import RFRegressorFeatureOutOfFold
 from vivid.out_of_fold.kneighbor import OptunaKNeighborRegressorOutOfFold
@@ -68,8 +67,6 @@ class TestCore(TestCase):
         (boosting.LGBMRegressorOutOfFold,),
         (boosting.LGBMClassifierOutOfFold,),
         (RFRegressorFeatureOutOfFold,),
-        (neural_network.SkerasRegressorOutOfFoldFeature, {'add_init_param': {'epochs': 1}}),
-        (neural_network.SkerasClassifierOutOfFoldFeature, {'add_init_param': {'epochs': 1}})
     ])
     def test_recording(self, model_class: Type[BaseOutOfFoldFeature], params=None):
         if params is None: params = {}
@@ -140,6 +137,20 @@ def test_custom_cv_as_list():
     for cv_idxes, clf_indexes in zip(cv, clf.get_fold_splitting(X, y)):
         assert np.array_equal(cv_idxes[0], clf_indexes[0])
         assert np.array_equal(cv_idxes[1], clf_indexes[1])
+
+
+def test_updated_model_parameters_add_init_params():
+    add_params = {
+        'n_estimators': 1,
+        'colsample_bytree': .9
+    }
+    model = boosting.XGBoostRegressorOutOfFold(name='xgb', add_init_param=add_params)
+    input_df, y = get_boston()
+    model.fit(input_df, y)
+
+    for m in model.fitted_models:
+        for key, value in add_params.items():
+            assert getattr(m.fitted_model_, key) == value
 
 
 @pytest.mark.parametrize('metric_func', [

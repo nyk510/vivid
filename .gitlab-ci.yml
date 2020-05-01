@@ -7,21 +7,23 @@ variables:
   # [HOTFIX]: gitlab のバグでないと Docker in Docker のデーモンにアクセスできないっぽい
   DOCKER_TLS_CERTDIR: ''
 
-
-before_script:
-  - export TEST_IMAGE=${REGISTRY_BASE}/test 
-  - export PATH=~/.local/bin:/usr/bin/:$PATH
-  - apk update
-  - apk --no-cache add --update curl bash jq python python-dev py-pip
-  - pip install -U pip
-  - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
+.use-docker:
+  before_script:
+    - export TEST_IMAGE=${REGISTRY_BASE}/test 
+    - export PATH=~/.local/bin:/usr/bin/:$PATH
+    - apk update
+    - apk --no-cache add --update curl bash jq python python-dev py-pip
+    - pip install -U pip
+    - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
 
 stages:
   - build
   - test
+  - pages
 
 # build image for test context
 build-test:
+  extends: .use-docker
   stage: build
   script:
     - docker build -t ${TEST_IMAGE} .
@@ -32,6 +34,7 @@ build-test:
 
 test:
   stage: test
+  extends: .use-docker
   script:
     - export LOGLEVEL=INFO
     - docker pull ${TEST_IMAGE}
@@ -40,3 +43,20 @@ test:
     name: "$CI_JOB_NAME"
     paths:
       - dist
+
+pages:
+  stage: pages
+  image: node:alpine
+  cache:
+    paths:
+      - docs/node_modules/
+  script:
+    - cd docs
+    - yarn install
+    - yarn docs:build
+    - mv src/.vuepress/dist ../public
+  artifacts:
+    paths:
+      - public
+  only:
+    - master
