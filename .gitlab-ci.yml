@@ -19,6 +19,7 @@ variables:
 stages:
   - build
   - test
+  - pages
 
 # build image for test context
 build-test:
@@ -42,3 +43,20 @@ test:
     name: "$CI_JOB_NAME"
     paths:
       - dist
+
+pages:
+  stage: pages
+  image: node:alpine
+  cache:
+    paths:
+      - docs/node_modules/
+  script:
+    - cd docs
+    - yarn install
+    - yarn docs:build
+    - mv src/.vuepress/dist ../public
+  artifacts:
+    paths:
+      - public
+  only:
+    - pushes
