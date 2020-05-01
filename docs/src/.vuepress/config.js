@@ -2,7 +2,7 @@ module.exports = {
   base: '/vivid/',
   port: 3000,
   title: 'VIVID',
-  description: 'Support Tools for Machine Learning Vividly',
+  description: 'Support Tools For Your Machine Learning Project Vividly',
   themeConfig: {
     sidebar: {
       // '/': [
