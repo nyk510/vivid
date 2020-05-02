@@ -174,6 +174,15 @@ def test_optuna_change_metric(metric_func):
     np.testing.assert_almost_equal(-score, model.study.best_value, decimal=7)
 
 
+def test_find_best_value():
+    model = OptunaKNeighborRegressorOutOfFold(name='optuna_test', n_trials=10, scoring='neg_mean_absolute_error')
+    df, y = get_boston()
+    model.fit(df, y)
+
+    trial_df = model.study.trials_dataframe()
+    assert trial_df['value'].max() == model.study.best_value
+
+
 def test_change_scoring_strategy():
     """check same scoring value in convex objective"""
     df, y = get_boston()
@@ -186,7 +195,7 @@ def test_change_scoring_strategy():
     assert - mean_squared_error(y, oof_df.values[:, 0]) ** .5 == model.study.best_value
 
 
-def test_optuna_min_max_shift():
+def test_custom_scoring_metric():
     df, y = get_boston()
     scoring = make_scorer(mean_absolute_error, greater_is_better=False)
     model = OptunaKNeighborRegressorOutOfFold(name='optuna', n_trials=10, scoring=scoring)
