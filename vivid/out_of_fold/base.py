@@ -455,7 +455,7 @@ class BaseOptunaOutOfFoldFeature(BaseOutOfFoldFeature):
         """
         self.logger.info('start optimize by optuna')
 
-        self.study = optuna.study.create_study()
+        self.study = optuna.study.create_study(direction='maximize')
         objective = lambda trial: self.get_objective(trial, X, y)
 
         # Stop model logging while optuna optimization
