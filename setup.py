@@ -30,14 +30,14 @@ def get_install_requires():
         'lightgbm',
         'keras',
         'tensorflow'
-
     ]
     return install_requires
 
 
 def get_extra_requires():
     extras = {
-        'test': ['pytest', 'pytest-cov', 'parameterized', 'ipython', 'jupyter', 'notebook', 'tornado==5.1.1'],
+        'test': ['pytest', 'pytest-cov', 'parameterized', 'ipython', 'jupyter', 'notebook', 'tornado==5.1.1',
+                 'feather-format'],
         'document': ['sphinx', 'sphinx_rtd_theme']
     }
     return extras
