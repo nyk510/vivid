@@ -6,10 +6,12 @@ import pandas as pd
 import pytest
 
 from vivid.core import AbstractFeature
-from .settings import OUTPUT_DIR
 
 RECORDING_DIR = '/workspace/output'
 os.makedirs(RECORDING_DIR, exist_ok=True)
+
+# テスト時に使う出力先フォルダ
+OUTPUT_DIR = os.environ.get('OUTPUT_DIR', '/test_cache')
 
 
 class SampleFeature(AbstractFeature):
@@ -29,7 +31,7 @@ class RecordingFeature(AbstractFeature):
 
 
 @pytest.fixture
-def train_data():
+def train_data() -> [pd.DataFrame, np.ndarray]:
     n_rows = 100
     n_cols = 10
     x = np.random.uniform(size=(n_rows, n_cols))
@@ -39,19 +41,34 @@ def train_data():
 
 
 @pytest.fixture
-def clean():
-    shutil.rmtree(OUTPUT_DIR)
-    yield
+def toy_df():
+    x = [
+        [1, 'foo'],
+        [2, 'bar'],
+        [5, 'poyo']
+    ]
+    return pd.DataFrame(data=x, columns=['int_type', 'string_type'])
+
+
+@pytest.fixture
+def output_dir() -> str:
+    default_path = os.path.join(os.path.expanduser('~'), '.vivid', 'test_cache')
+    return os.environ.get('OUTPUT_DIR', default_path)
 
 
 @pytest.fixture(scope='function', autouse=True)
-def clean_up():
-    shutil.rmtree(OUTPUT_DIR)
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+def clean_up(output_dir: str):
+    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(RECORDING_DIR, exist_ok=True)
     yield
-    from vivid.env import Settings
+
+    from vivid.env import Settings, get_dataframe_backend
     Settings.CACHE_ON_TRAIN = True
     Settings.CACHE_ON_TEST = True
+    Settings.DATAFRAME_BACKEND = 'vivid.backends.FeatherBackend'
+    get_dataframe_backend.backend = None
+    shutil.rmtree(output_dir)
+    shutil.rmtree(RECORDING_DIR)
 
 
 def test_sample_feature(train_data):

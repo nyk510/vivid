@@ -1,8 +1,6 @@
 """
 sklearn extend のテストコード
 """
-import os
-import shutil
 
 import numpy as np
 import pytest
@@ -71,13 +69,11 @@ class TestRecordingModel(object):
         with pytest.raises(NotFittedError):
             model.predict(x)
 
-    def test_save_and_read(self):
+    def test_save_and_read(self, output_dir):
         model_class = Lasso
-        model = PrePostProcessModel(model_class=model_class, model_params=None, output_dir='~/.cache',
+        model = PrePostProcessModel(model_class=model_class, model_params=None, output_dir=output_dir,
                                     input_scaling='standard')
 
-        if os.path.exists('~/.cache'):
-            shutil.rmtree('~/.cache')
         assert model.is_recording
 
         x, y = np.random.uniform(size=(10, 10)), np.random.uniform(size=(10,))
