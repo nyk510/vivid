@@ -17,7 +17,7 @@ from sklearn.metrics import check_scoring
 from sklearn.metrics._scorer import _BaseScorer
 from sklearn.model_selection import KFold, check_cv
 
-from vivid.core import AbstractFeature
+from vivid.core import AbstractFeature, MergeFeature
 from vivid.env import Settings
 from vivid.metrics import binary_metrics, upper_accuracy, regression_metrics
 from vivid.sklearn_extend import PrePostProcessModel
@@ -79,7 +79,7 @@ class BaseOutOfFoldFeature(AbstractFeature):
         self.finish_fit = False
 
     @property
-    def serializer_path(self):
+    def model_param_path(self):
         if self.is_recording:
             return os.path.join(self.output_dir, self._serialize_filaname)
         return None
@@ -91,22 +91,20 @@ class BaseOutOfFoldFeature(AbstractFeature):
         return None
 
     def load_best_models(self):
+        """load fitted models from local model parameters."""
         if self.output_dir is None:
             raise NotFittedError('Feature run without recording. Must Set Output Dir. ')
 
-        if not os.path.exists(self.serializer_path):
-            raise NotFittedError('Model Serialized file {} not found.'.format(self.serializer_path) +
+        if not os.path.exists(self.model_param_path):
+            raise NotFittedError('Model Serialized file {} not found.'.format(self.model_param_path) +
                                  'Run fit before load model.')
-        param_list = joblib.load(self.serializer_path)
+        param_list = joblib.load(self.model_param_path)
         models = []
         for params in param_list:
             model = self.create_model({}, prepend_name=params['prepend_name'], recording=True)
             model.load_trained_model()
             models.append(model)
         return models
-
-    def save_best_models(self, best_models):
-        joblib.dump(best_models, self.serializer_path)
 
     def get_fold_splitting(self, X, y) -> Iterable:
         # If cv is iterable object, convert to list and return
@@ -194,7 +192,7 @@ class BaseOutOfFoldFeature(AbstractFeature):
         oof_df = pd.DataFrame(oof, columns=[str(self)])
         return oof_df
 
-    def run_oof_train(self, X, y, default_params) -> ([List[PrePostProcessModel], np.ndarray]):
+    def run_oof_train(self, X, y, default_params, recording=True) -> ([List[PrePostProcessModel], np.ndarray]):
         """
         main training loop.
 
@@ -203,6 +201,7 @@ class BaseOutOfFoldFeature(AbstractFeature):
             y: target. shape = (n_samples, n_classes)
             default_params: default model parameter. pass to model constructor (not fit)
                 If you change fit parameter like `eval_metric`, override get_fit_params_on_each_fold.
+            recording: Whether save trained model each fold.
 
         Returns:
             list of fitted models and out-of-fold numpy array.
@@ -225,7 +224,7 @@ class BaseOutOfFoldFeature(AbstractFeature):
                                       validation_set=(X_valid, y_valid),
                                       indexes_set=(idx_train, idx_valid),
                                       prepend_name=i,
-                                      recording=True)
+                                      recording=recording)
 
             if self.is_regression_model:
                 pred_i = clf.predict(X_valid).reshape(-1)
@@ -296,44 +295,15 @@ class BaseOutOfFoldFeature(AbstractFeature):
         return model
 
     def after_kfold_fitting(self, df_source, y, predict):
-        try:
-            self.show_metrics(y, predict)
-        except Exception as e:
-            self.logger.warn(e)
-
-        if not self.is_recording:
-            return
-
-        model_outputs = []
-        for m in self.fitted_models:
-            model_outputs.append(m.get_params(deep=False))
-        joblib.dump(model_outputs, self.serializer_path)
-
-    def show_metrics(self, y, prob_predict):
-        if self.is_regression_model:
-            metric_df = regression_metrics(y, prob_predict)
-        else:
-            metric_df = binary_metrics(y, prob_predict)
-        self.logger.info(metric_df)
-
         if self.is_recording:
-            metric_df.to_csv(os.path.join(self.output_dir, 'metrics.csv'))
+            self.save_model_parameters(self.fitted_models)
 
-        if not self.is_regression_model:
-            self._generate_binary_result_graph(y, prob_predict)
-
-    def _generate_binary_result_graph(self, y, prob_predict):
-        df_upper_acc = upper_accuracy(y, prob_predict)
-        fig = plt.figure(figsize=(6, 6))
-        ax = fig.add_subplot(111)
-        df_upper_acc.plot(x='ratio', y='accuracy', ax=ax)
-        ax.set_xlim(0, 1)
-        ax.set_ylim(min(df_upper_acc.accuracy) - .05, 1)
-        ax.set_title('Upper Accuracy')
-        fig.tight_layout()
-        fig.savefig(os.path.join(self.output_dir, 'upper_accuray.png'), dpi=150)
-        df_upper_acc.to_csv(os.path.join(self.output_dir, 'upper_accuracy.csv'), index=False)
-        plt.close(fig)
+    def save_model_parameters(self, best_models: List[PrePostProcessModel]) -> List[dict]:
+        model_parameters = []
+        for m in best_models:
+            model_parameters.append(m.get_params(deep=False))
+        joblib.dump(model_parameters, self.model_param_path)
+        return model_parameters
 
 
 class BaseOptunaOutOfFoldFeature(BaseOutOfFoldFeature):
@@ -479,3 +449,62 @@ class BaseOptunaOutOfFoldFeature(BaseOutOfFoldFeature):
                 json.dump(self.study.best_params, f, indent=4)
 
         return best_params
+
+
+class ShowMetricMixin:
+    """show model metrics using out-of-fold prediction"""
+
+    def after_kfold_fitting(self: Union['ShowMetricMixin', BaseOutOfFoldFeature], df_source, y, predict):
+        super(ShowMetricMixin, self).after_kfold_fitting(df_source, y, predict)
+        try:
+            self.show_metrics(y, predict)
+        except Exception as e:
+            self.logger.warn(e)
+
+    def show_metrics(self: Union['ShowMetricMixin', BaseOutOfFoldFeature], y, prob_predict):
+        if self.is_regression_model:
+            metric_df = regression_metrics(y, prob_predict)
+        else:
+            metric_df = binary_metrics(y, prob_predict)
+        self.logger.info(metric_df)
+
+        if self.is_recording:
+            metric_df.to_csv(os.path.join(self.output_dir, 'metrics.csv'))
+
+        if not self.is_regression_model:
+            self._generate_binary_result_graph(y, prob_predict)
+
+    def _generate_binary_result_graph(self: Union['ShowMetricMixin', BaseOutOfFoldFeature], y, prob_predict):
+        df_upper_acc = upper_accuracy(y, prob_predict)
+        fig = plt.figure(figsize=(6, 6))
+        ax = fig.add_subplot(111)
+        df_upper_acc.plot(x='ratio', y='accuracy', ax=ax)
+        ax.set_xlim(0, 1)
+        ax.set_ylim(min(df_upper_acc.accuracy) - .05, 1)
+        ax.set_title('Upper Accuracy')
+        fig.tight_layout()
+        fig.savefig(os.path.join(self.output_dir, 'upper_accuray.png'), dpi=150)
+        df_upper_acc.to_csv(os.path.join(self.output_dir, 'upper_accuracy.csv'), index=False)
+        plt.close(fig)
+
+
+class GenericOutOfFoldFeature(ShowMetricMixin, BaseOutOfFoldFeature):
+    pass
+
+
+class GenericOutOfFoldOptunaFeature(ShowMetricMixin, BaseOptunaOutOfFoldFeature):
+    pass
+
+
+class EnsembleFeature(ShowMetricMixin, MergeFeature):
+    """ensemble all source features"""
+    allow_save_local = True
+
+    def call(self, df_source, y=None, test=False):
+        df = super(EnsembleFeature, self).call(df_source, y, test)
+        out_df = pd.DataFrame(df.mean(axis=1), columns=[self.name])
+
+        if y is not None:
+            self.after_kfold_fitting(df_source, y, out_df.values[:, 0])
+
+        return out_df
