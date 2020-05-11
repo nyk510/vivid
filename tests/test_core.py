@@ -8,7 +8,6 @@ import pytest
 
 from vivid.core import MergeFeature, EnsembleFeature, AbstractFeature
 from .conftest import SampleFeature
-from .settings import OUTPUT_DIR
 
 
 def test_merge_feature(train_data):
@@ -39,7 +38,7 @@ def test_ensemble_feature(train_data):
     assert len(train_df) == len(pred)
 
 
-def test_abstract_feature():
+def test_abstract_feature(output_dir):
     abs_entrypoint = AbstractFeature(name='abs1', parent=None)
 
     model_based = AbstractFeature(name='model1', parent=abs_entrypoint)
@@ -48,29 +47,28 @@ def test_abstract_feature():
     assert model_based.is_recording is False
     assert model_based.has_train_meta_path is False
 
-    parent_dir = OUTPUT_DIR
-    concrete = AbstractFeature(name='concrete', root_dir=parent_dir)
+    concrete = AbstractFeature(name='concrete', root_dir=output_dir)
     model_concrete = AbstractFeature(name='model1', root_dir=None, parent=concrete)
 
     assert concrete.is_recording
     assert model_concrete.is_recording
 
     # model concrete doesn't have his own dir, so the output dir is same as parent dir
-    assert parent_dir == os.path.dirname(model_concrete.output_dir)
+    assert output_dir == os.path.dirname(model_concrete.output_dir)
 
     # set root dir expressly, so this model save his own dir
-    model_overthere = AbstractFeature(name='over', root_dir=os.path.join(OUTPUT_DIR, 'the', 'other'),
+    model_overthere = AbstractFeature(name='over', root_dir=os.path.join(output_dir, 'the', 'other'),
                                       parent=concrete)
-    assert parent_dir != os.path.dirname(model_overthere.output_dir)
+    assert output_dir != os.path.dirname(model_overthere.output_dir)
 
     class NotSave(AbstractFeature):
         allow_save_local = False
 
-    not_save = NotSave(name='not_save', parent=None, root_dir=parent_dir)
+    not_save = NotSave(name='not_save', parent=None, root_dir=output_dir)
     assert not not_save.is_recording
 
 
-def test_save_train_and_test(train_data, clean):
+def test_save_train_and_test(train_data, output_dir):
     train_df, y = train_data
 
     class BasicFeature(AbstractFeature):
@@ -80,7 +78,7 @@ def test_save_train_and_test(train_data, clean):
             self.count += 1
             return pd.DataFrame(df_source.iloc[:, 0].values)
 
-    feat = BasicFeature(name='basic', parent=None, root_dir=OUTPUT_DIR)
+    feat = BasicFeature(name='basic', parent=None, root_dir=output_dir)
     assert feat.is_recording
     assert feat.has_train_meta_path is False
 
@@ -90,7 +88,7 @@ def test_save_train_and_test(train_data, clean):
 
     pred_df = feat.predict(train_df)
     assert feat.count == 2
-    assert os.path.exists(os.path.join(feat.output_dir, 'test.csv'))
+    assert os.path.exists(feat.output_test_meta_path)
 
     pred_df2 = feat.predict(train_df.tail(5))
     assert feat.count == 2
@@ -103,7 +101,7 @@ def test_save_train_and_test(train_data, clean):
 
 
 @pytest.mark.parametrize('use_cache', [True, False])
-def test_features_cache(train_data, clean, use_cache: bool):
+def test_features_cache(train_data, use_cache: bool, output_dir):
     """cache を使うかどうかの選択を行えるかどうかのテスト"""
     train_df, y = train_data
 
@@ -116,7 +114,7 @@ def test_features_cache(train_data, clean, use_cache: bool):
     Settings.CACHE_ON_TEST = use_cache
     Settings.CACHE_ON_TRAIN = use_cache
 
-    feat = BasicFeature(name='basic', root_dir=OUTPUT_DIR)
+    feat = BasicFeature(name='basic', root_dir=output_dir)
 
     oof_df = feat.fit(train_df, y)
     test_pred_df = feat.predict(train_df.head(10))

@@ -1,121 +1,97 @@
 import os
-import shutil
 from typing import Type
-from unittest import TestCase
 
 import numpy as np
 import pandas as pd
 import pytest
-from parameterized import parameterized
-from sklearn.datasets import load_boston, load_breast_cancer
 from sklearn.metrics import make_scorer
 from sklearn.metrics import mean_absolute_error, mean_squared_log_error
 from sklearn.model_selection import KFold, StratifiedKFold
 
-from tests.conftest import SampleFeature, RECORDING_DIR, RecordingFeature
+from tests.conftest import SampleFeature, RecordingFeature
 from vivid.out_of_fold import boosting
 from vivid.out_of_fold.base import NotFittedError, BaseOutOfFoldFeature
 from vivid.out_of_fold.ensumble import RFRegressorFeatureOutOfFold
 from vivid.out_of_fold.kneighbor import OptunaKNeighborRegressorOutOfFold
-from vivid.out_of_fold.linear import RidgeOutOfFold
 
 base_feat = SampleFeature()
 
 
-def get_boston():
-    X, y = load_boston(True)
-    return pd.DataFrame(X), y
+def test_serializing(regression_data):
+    feat_none_save = OptunaKNeighborRegressorOutOfFold(name='serialize_0', n_trials=1)
+    feat_none_save.fit(*regression_data)
+
+    with pytest.raises(NotFittedError):
+        feat_none_save.load_best_models()
 
 
-def get_binary():
-    x, y = load_breast_cancer(True)
-    return pd.DataFrame(x), y
+def test_not_recoding(regression_data):
+    df, y = regression_data
+    feat_not_recoding_root = OptunaKNeighborRegressorOutOfFold(parent=base_feat, name='not_save_parent', n_trials=1)
+    feat_not_recoding_root.fit(df, y)
+    with pytest.raises(NotFittedError):
+        feat_not_recoding_root.load_best_models()
 
 
-class TestCore(TestCase):
-    def setUp(self):
-        if os.path.exists(RECORDING_DIR):
-            shutil.rmtree(RECORDING_DIR)
+def test_use_cache(regression_data):
+    df, y = regression_data
+    feat = OptunaKNeighborRegressorOutOfFold(parent=None, name='knn', n_trials=1)
 
-    def test_serializing(self):
-        feat_none_save = OptunaKNeighborRegressorOutOfFold(name='serialize_0', n_trials=1)
-        feat_none_save.fit(*get_boston())
+    output_df = feat.fit(df, y)
+    assert feat.feat_on_train_df is not None
+    output_repeat_df = feat.fit(df, y)
 
-        with pytest.raises(NotFittedError):
-            feat_none_save.load_best_models()
+    assert output_df is output_repeat_df, feat
 
-    def test_not_recoding(self):
-        feat_not_recoding_root = OptunaKNeighborRegressorOutOfFold(parent=base_feat, name='not_save_parent', n_trials=1)
-        feat_not_recoding_root.fit(*get_boston())
-        with pytest.raises(NotFittedError):
-            feat_not_recoding_root.load_best_models()
 
-    def test_use_cache(self):
-        df, y = get_boston()
-        feat = OptunaKNeighborRegressorOutOfFold(parent=None, name='knn', n_trials=1)
+@pytest.mark.parametrize('model_class', [boosting.XGBoostRegressorOutOfFold, boosting.XGBoostClassifierOutOfFold])
+def test_recording(model_class: Type[BaseOutOfFoldFeature], regression_data, binary_data):
+    recording_feature = RecordingFeature()
+    clf = model_class(parent=recording_feature, name='serialize_1')
 
-        output_df = feat.fit(df, y)
-        self.assertIsNotNone(feat.feat_on_train_df, feat)
-        output_repeat_df = feat.fit(df, y)
-        self.assertIs(output_df, output_repeat_df, feat)
-
-    @parameterized.expand([
-        (RidgeOutOfFold, {'n_trials': 1}),
-        (OptunaKNeighborRegressorOutOfFold, {'n_trials': 1}),
-        (boosting.XGBoostRegressorOutOfFold,),
-        (boosting.XGBoostClassifierOutOfFold,),
-        (boosting.LGBMRegressorOutOfFold,),
-        (boosting.LGBMClassifierOutOfFold,),
-        (RFRegressorFeatureOutOfFold,),
-    ])
-    def test_recording(self, model_class: Type[BaseOutOfFoldFeature], params=None):
-        if params is None: params = {}
-        recording_feature = RecordingFeature()
-        clf = model_class(parent=recording_feature, name='serialize_1', **params)
-
-        with pytest.raises(NotFittedError):
-            clf.load_best_models()
-
-        # 学習前なのでモデルの重みはあってはならない
-        assert not os.path.exists(clf.serializer_path), clf
-
-        if clf.is_regression_model:
-            df, y = get_boston()
-        else:
-            df, y = get_binary()
-        clf.fit(df, y)
-
-        assert clf.is_recording, clf
-        assert clf.finish_fit, clf
-
-        # 学習後なのでモデルの重みが無いとだめ
-        assert os.path.exists(clf.serializer_path), clf
-
-        # モデル読み込みと予測が可能
+    with pytest.raises(NotFittedError):
         clf.load_best_models()
-        pred1 = clf.predict(df)
 
-        # 再度定義しなおしても推論は可能 (ローカルからモデルを呼び出して来ることができる)
-        clf = model_class(parent=recording_feature, name='serialize_1', **params)
-        pred2 = clf.predict(df)
-        assert pred1.equals(pred2), (pred1, pred2)
+    # 学習前なのでモデルの重みはあってはならない
+    assert not os.path.exists(clf.model_param_path), clf
 
-    def test_add_sample_weight(self):
-        df, y = get_boston()
-        sample_weight = df.values[:, 0]
-        model = RFRegressorFeatureOutOfFold(name='rf', sample_weight=sample_weight)
-        model.fit(df, y)
+    if clf.is_regression_model:
+        df, y = regression_data
+    else:
+        df, y = binary_data
+    clf.fit(df, y)
 
-        for clf, (idx_train, idx_valid) in zip(model.fitted_models, model.get_fold_splitting(df.values, y)):
-            assert np.array_equal(clf.fit_params_.get('sample_weight', None), sample_weight[idx_train])
+    assert clf.is_recording, clf
+    assert clf.finish_fit, clf
+
+    # 学習後なのでモデルの重みが無いとだめ
+    assert os.path.exists(clf.model_param_path), clf
+
+    # モデル読み込みと予測が可能
+    clf.load_best_models()
+    pred1 = clf.predict(df)
+
+    # 再度定義しなおしても推論は可能 (ローカルからモデルを呼び出して来ることができる)
+    clf = model_class(parent=recording_feature, name='serialize_1')
+    pred2 = clf.predict(df)
+    assert pred1.equals(pred2), (pred1, pred2)
 
 
-@parameterized.expand([
-    (KFold(n_splits=2),),
-    (StratifiedKFold(n_splits=10, shuffle=True, random_state=71),),  # Must set random state
+def test_add_sample_weight(regression_data):
+    df, y = regression_data
+    sample_weight = df.values[:, 0]
+    model = RFRegressorFeatureOutOfFold(name='rf', sample_weight=sample_weight)
+    model.fit(df, y)
+
+    for clf, (idx_train, idx_valid) in zip(model.fitted_models, model.get_fold_splitting(df.values, y)):
+        assert np.array_equal(clf.fit_params_.get('sample_weight', None), sample_weight[idx_train])
+
+
+@pytest.mark.parametrize('cv', [
+    KFold(n_splits=2), StratifiedKFold(n_splits=10, shuffle=True, random_state=71),  # Must set random state
 ])
-def test_custom_cv_class(cv):
-    df, y = get_binary()
+def test_custom_cv_class(cv, binary_data):
+    df, y = binary_data
     clf = boosting.XGBoostClassifierOutOfFold(name='xgb', cv=cv)
 
     for origin, model in zip(cv.split(df.values, y), clf.get_fold_splitting(df.values, y)):
@@ -139,13 +115,13 @@ def test_custom_cv_as_list():
         assert np.array_equal(cv_idxes[1], clf_indexes[1])
 
 
-def test_updated_model_parameters_add_init_params():
+def test_updated_model_parameters_add_init_params(regression_data):
     add_params = {
         'n_estimators': 1,
         'colsample_bytree': .9
     }
     model = boosting.XGBoostRegressorOutOfFold(name='xgb', add_init_param=add_params)
-    input_df, y = get_boston()
+    input_df, y = regression_data
     model.fit(input_df, y)
 
     for m in model.fitted_models:
@@ -157,8 +133,8 @@ def test_updated_model_parameters_add_init_params():
     mean_absolute_error,
     mean_squared_log_error
 ])
-def test_optuna_change_metric(metric_func):
-    df, y = get_boston()
+def test_optuna_change_metric(metric_func, regression_data):
+    df, y = regression_data
     scoring = make_scorer(metric_func, greater_is_better=False)
     model = OptunaKNeighborRegressorOutOfFold(name='optuna', n_trials=1, scoring=scoring,
                                               scoring_strategy='fold')
@@ -174,18 +150,18 @@ def test_optuna_change_metric(metric_func):
     np.testing.assert_almost_equal(-score, model.study.best_value, decimal=7)
 
 
-def test_find_best_value():
+def test_find_best_value(regression_data):
     model = OptunaKNeighborRegressorOutOfFold(name='optuna_test', n_trials=10, scoring='neg_mean_absolute_error')
-    df, y = get_boston()
+    df, y = regression_data
     model.fit(df, y)
 
     trial_df = model.study.trials_dataframe()
     assert trial_df['value'].max() == model.study.best_value
 
 
-def test_change_scoring_strategy():
+def test_change_scoring_strategy(regression_data):
     """check same scoring value in convex objective"""
-    df, y = get_boston()
+    df, y = regression_data
     model = OptunaKNeighborRegressorOutOfFold(name='test', n_trials=1,
                                               scoring='neg_root_mean_squared_error',
                                               scoring_strategy='whole')
@@ -195,8 +171,8 @@ def test_change_scoring_strategy():
     assert - mean_squared_error(y, oof_df.values[:, 0]) ** .5 == model.study.best_value
 
 
-def test_custom_scoring_metric():
-    df, y = get_boston()
+def test_custom_scoring_metric(regression_data):
+    df, y = regression_data
     scoring = make_scorer(mean_absolute_error, greater_is_better=False)
     model = OptunaKNeighborRegressorOutOfFold(name='optuna', n_trials=10, scoring=scoring)
     model.fit(df, y)
@@ -205,8 +181,8 @@ def test_custom_scoring_metric():
 
 
 class TestKneighbors(object):
-    def test_optuna(self):
-        df_train, y = get_boston()
+    def test_optuna(self, regression_data):
+        df_train, y = regression_data
         feat = OptunaKNeighborRegressorOutOfFold(parent=None, name='test_kn_1', n_trials=1)
         feat.fit(df_train, y, force=True)
 
@@ -217,14 +193,14 @@ class TestKneighbors(object):
 
 
 class TestXGBoost(object):
-    def test_xgb_feature(self, train_data):
-        train_df, y = train_data
+    def test_xgb_feature(self, regression_data):
+        train_df, y = regression_data
         feat = boosting.XGBoostRegressorOutOfFold(parent=None, name='test_xgb')
         feat.fit(train_df, y, force=True)
 
-    def test_optuna_xgb(self, train_data):
+    def test_optuna_xgb(self, regression_data):
         feat = boosting.OptunaXGBRegressionOutOfFold(parent=None, name='test_xgb_optuna', n_trials=1)
-        df_train, y = get_boston()
+        df_train, y = regression_data
         feat.fit(df_train, y, force=True)
 
         assert feat.study.best_params is not None
@@ -236,7 +212,7 @@ class TestXGBoost(object):
 
 
 class TestLightGBM(object):
-    def test_lgbm_feature(self, train_data):
-        train_df, y = train_data
+    def test_lgbm_feature(self, regression_data):
+        train_df, y = regression_data
         feat = boosting.LGBMRegressorOutOfFold(parent=None, name='test_lightgbm')
         feat.fit(train_df, y, force=True)

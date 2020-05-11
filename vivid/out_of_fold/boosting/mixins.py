@@ -1,6 +1,7 @@
 import os
 from copy import deepcopy
 from typing import List
+from typing import Union
 
 import matplotlib.pyplot as plt
 from optuna.trial import Trial
@@ -8,14 +9,14 @@ from optuna.trial import Trial
 from vivid.sklearn_extend import PrePostProcessModel
 from vivid.visualize import visualize_feature_importance
 from .callback import logging_evaluation
-from ..base import BaseOutOfFoldFeature
+from ..base import BaseOutOfFoldFeature, GenericOutOfFoldFeature, GenericOutOfFoldOptunaFeature
 
 
 class FeatureImportanceMixin:
     fitted_models: List[PrePostProcessModel]
     n_importance_plot = 50
 
-    def after_kfold_fitting(self: BaseOutOfFoldFeature, df_source, y, predict):
+    def after_kfold_fitting(self: Union['FeatureImportanceMixin', BaseOutOfFoldFeature], df_source, y, predict):
         self.logger.info(f'save to {self.output_dir}')
 
         if self.is_recording:
@@ -28,7 +29,7 @@ class FeatureImportanceMixin:
 
             plt.close(fig)
 
-        super(FeatureImportanceMixin, self).after_kfold_fitting(df_source, y, predict)
+        return super(FeatureImportanceMixin, self).after_kfold_fitting(df_source, y, predict)
 
 
 class BoostingEarlyStoppingMixin:
@@ -36,7 +37,8 @@ class BoostingEarlyStoppingMixin:
     eval_metric = None
     fit_verbose = 100
 
-    def get_fit_params_on_each_fold(self, model_params, training_set, validation_set, indexes_set):
+    def get_fit_params_on_each_fold(self: Union['BoostingEarlyStoppingMixin', BaseOutOfFoldFeature],
+                                    model_params, training_set, validation_set, indexes_set):
         params = super(BoostingEarlyStoppingMixin, self) \
             .get_fit_params_on_each_fold(model_params, training_set, validation_set, indexes_set)
 
@@ -57,7 +59,11 @@ class BoostingEarlyStoppingMixin:
         return params
 
 
-class BoostingOufOfFoldFeatureSet(FeatureImportanceMixin, BoostingEarlyStoppingMixin, BaseOutOfFoldFeature):
+class BoostingOutOfFoldFeature(FeatureImportanceMixin, BoostingEarlyStoppingMixin, GenericOutOfFoldFeature):
+    pass
+
+
+class BoostingOptunaFeature(FeatureImportanceMixin, BoostingEarlyStoppingMixin, GenericOutOfFoldOptunaFeature):
     pass
 
 

@@ -1,6 +1,8 @@
 from collections import OrderedDict
 from typing import Type, List
+from typing import Union
 
+import numpy as np
 import pandas as pd
 
 from .atoms import AbstractAtom
@@ -9,10 +11,13 @@ from .atoms import AbstractAtom
 class OneHotEncodingAtom(AbstractAtom):
     """use_columns に対して One Hot Encoding を実行する"""
 
-    def __init__(self, dummpy_na=False):
+    def __init__(self,
+                 min_freq: Union[int, float] = 0,
+                 max_columns: Union[None, int, float] = None):
         super(OneHotEncodingAtom, self).__init__()
         self.mapping_ = None
-        self.dummy_na = False
+        self.min_freq = min_freq
+        self.max_columns = max_columns
 
     @property
     def is_fitted(self):
@@ -21,8 +26,22 @@ class OneHotEncodingAtom(AbstractAtom):
     def fit(self, input_df: pd.DataFrame, y=None):
         self.mapping_ = OrderedDict()
         for c in self.use_columns:
-            cat = sorted(input_df[c].dropna().unique())
-            self.mapping_[c] = cat
+            vc = input_df[c].dropna().value_counts()
+
+            if 0 < self.min_freq < 1.:
+                min_count = len(input_df) * self.min_freq
+            elif self.min_freq <= 0:
+                min_count = 0
+            else:
+                min_count = int(self.min_freq)
+
+            cats = vc[vc >= min_count].index
+
+            if self.max_columns is not None and len(cats) > self.max_columns:
+                n = max(0, self.max_columns)
+                n = np.floor(n)
+                cats = cats[:int(n)]
+            self.mapping_[c] = sorted(cats)
         return self
 
     def transform(self, input_df):
@@ -31,7 +50,7 @@ class OneHotEncodingAtom(AbstractAtom):
         for c in self.use_columns:
             x = input_df[c]
             cat = pd.Categorical(x, categories=self.mapping_[c])
-            df_i = pd.get_dummies(cat, prefix=f'{c}_', dummy_na=self.dummy_na)
+            df_i = pd.get_dummies(cat, prefix=f'{c}_', dummy_na=False)
             df_i.columns = list(df_i.columns)
             out_df = pd.concat([out_df, df_i], axis=1)
 

@@ -9,7 +9,7 @@ variables:
 
 .use-docker:
   before_script:
-    - export TEST_IMAGE=${REGISTRY_BASE}/test 
+    - export TEST_IMAGE=${REGISTRY_BASE}/test
     - export PATH=~/.local/bin:/usr/bin/:$PATH
     - apk update
     - apk --no-cache add --update curl bash jq python python-dev py-pip
@@ -34,11 +34,12 @@ build-test:
 
 test:
   stage: test
-  extends: .use-docker
+  image: ${REGISTRY_BASE}/test
   script:
     - export LOGLEVEL=INFO
-    - docker pull ${TEST_IMAGE}
-    - docker run -v ${PWD}:/workspace ${TEST_IMAGE} pytest -v --cov=./vivid/
+    - python setup.py sdist
+    - pip install $(ls dist/*.tar.gz)[test]
+    - pytest -v --cov=./vivid/
   artifacts:
     name: "$CI_JOB_NAME"
     paths:

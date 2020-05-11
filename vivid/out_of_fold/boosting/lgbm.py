@@ -1,9 +1,9 @@
 import lightgbm as lgbm
 
-from .mixins import BoostingOufOfFoldFeatureSet
+from .mixins import BoostingOutOfFoldFeature
 
 
-class LGBMClassifierOutOfFold(BoostingOufOfFoldFeatureSet):
+class LGBMClassifierOutOfFold(BoostingOutOfFoldFeature):
     model_class = lgbm.LGBMClassifier
     eval_metric = 'logloss'
     initial_params = {
@@ -18,7 +18,7 @@ class LGBMClassifierOutOfFold(BoostingOufOfFoldFeatureSet):
     }
 
 
-class LGBMRegressorOutOfFold(BoostingOufOfFoldFeatureSet):
+class LGBMRegressorOutOfFold(BoostingOutOfFoldFeature):
     model_class = lgbm.LGBMRegressor
     eval_metric = 'rmse'
     initial_params = {

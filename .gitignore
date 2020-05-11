@@ -174,3 +174,4 @@ data
 output
 
 .vscode
+docs/node_modules

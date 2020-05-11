@@ -43,7 +43,7 @@ class UtilityTransform(BaseEstimator, TransformerMixin):
 
         self.is_one_dim_ = len(x.shape) == 1
         if self.log:
-            x = np.log10(x + self.threshold)
+            x = np.log1p(x + self.threshold)
 
         if self.use_scaling:
             if self.is_one_dim_:
@@ -54,7 +54,7 @@ class UtilityTransform(BaseEstimator, TransformerMixin):
     def transform(self, x):
         check_is_fitted(self, 'is_one_dim_')
         if self.log:
-            x = np.log10(x + self.threshold)
+            x = np.log1p(x + self.threshold)
 
         if self.use_scaling:
             if self.is_one_dim_:
@@ -75,7 +75,7 @@ class UtilityTransform(BaseEstimator, TransformerMixin):
                 x = x.reshape(-1, )
 
         if self.log:
-            x = 10 ** x - self.threshold
+            x = np.expm1(x) - self.threshold
         return x
 
 

@@ -2,12 +2,10 @@ from copy import deepcopy
 
 import xgboost as xgb
 
-from vivid.out_of_fold.base import BaseOptunaOutOfFoldFeature
-from .mixins import FeatureImportanceMixin, BoostingOufOfFoldFeatureSet, get_boosting_parameter_suggestions, \
-    BoostingEarlyStoppingMixin
+from .mixins import get_boosting_parameter_suggestions, BoostingOptunaFeature, BoostingOutOfFoldFeature
 
 
-class XGBoostClassifierOutOfFold(BoostingOufOfFoldFeatureSet):
+class XGBoostClassifierOutOfFold(BoostingOutOfFoldFeature):
     eval_metric = 'logloss'
     model_class = xgb.XGBClassifier
     initial_params = {
@@ -19,7 +17,7 @@ class XGBoostClassifierOutOfFold(BoostingOufOfFoldFeatureSet):
     }
 
 
-class XGBoostRegressorOutOfFold(BoostingOufOfFoldFeatureSet):
+class XGBoostRegressorOutOfFold(BoostingOutOfFoldFeature):
     model_class = xgb.XGBRegressor
     eval_metric = 'rmse'
     initial_params = {
@@ -34,7 +32,7 @@ class XGBoostRegressorOutOfFold(BoostingOufOfFoldFeatureSet):
     }
 
 
-class OptunaXGBRegressionOutOfFold(FeatureImportanceMixin, BoostingEarlyStoppingMixin, BaseOptunaOutOfFoldFeature):
+class OptunaXGBRegressionOutOfFold(BoostingOptunaFeature):
     model_class = xgb.XGBRegressor
     eval_metric = 'rmse'
     initial_params = deepcopy(XGBoostRegressorOutOfFold.initial_params)
@@ -45,7 +43,7 @@ class OptunaXGBRegressionOutOfFold(FeatureImportanceMixin, BoostingEarlyStopping
         return param
 
 
-class OptunaXGBClassifierOutOfFold(FeatureImportanceMixin, BoostingEarlyStoppingMixin, BaseOptunaOutOfFoldFeature):
+class OptunaXGBClassifierOutOfFold(BoostingOptunaFeature):
     model_class = xgb.XGBClassifier
     eval_metric = 'logloss'
     initial_params = deepcopy(XGBoostClassifierOutOfFold.initial_params)

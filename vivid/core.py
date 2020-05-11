@@ -7,7 +7,7 @@ from typing import Union
 
 import pandas as pd
 
-from .env import Settings
+from .env import Settings, get_dataframe_backend
 from .utils import get_logger, timer
 
 
@@ -87,6 +87,10 @@ class AbstractFeature(object):
         return os.path.join(self.root_dir, str(self))
 
     @property
+    def dataframe_backend(self):
+        return get_dataframe_backend()
+
+    @property
     def output_train_meta_path(self):
         """
         作成した training 時の特徴量 csv への path
@@ -96,7 +100,12 @@ class AbstractFeature(object):
         """
         if not self.has_output_dir:
             return None
-        return os.path.join(self.output_dir, 'train.csv')
+        return os.path.join(self.output_dir, self.dataframe_backend.to_filename('train'))
+
+    @property
+    def output_test_meta_path(self):
+        if not self.has_output_dir: return None
+        return os.path.join(self.output_dir, self.dataframe_backend.to_filename('test'))
 
     @property
     def has_train_meta_path(self):
@@ -143,35 +152,35 @@ class AbstractFeature(object):
         self.initialize()
         if self.has_train_meta_path and not force:
             self.logger.info('train data is exists. load from local.')
-            return pd.read_csv(self.output_train_meta_path)
+            return self.dataframe_backend.load(self.output_train_meta_path)
 
         # 学習語の特徴量がキャッシュされている時それを返す
         if self.feat_on_train_df is not None:
             return self.feat_on_train_df
 
         if self.has_parent:
-            df_feat = self.parent.fit(input_df, y, force=force)
+            feat_df = self.parent.fit(input_df, y, force=force)
         else:
-            df_feat = input_df
+            feat_df = input_df
 
         with timer(self.logger, format_str='for create feature: {:.3f}[s]'):
-            df_feat = self.call(df_feat, y, test=False)
+            feat_df = self.call(feat_df, y, test=False)
 
         if Settings.CACHE_ON_TRAIN:
-            self.feat_on_train_df = df_feat
+            self.feat_on_train_df = feat_df
         if self.is_recording:
             os.makedirs(self.output_dir, exist_ok=True)
             assert os.path.exists(self.output_dir)
             self.logger.info('training data save to: {}'.format(self.output_train_meta_path))
-            df_feat.to_csv(self.output_train_meta_path, index=False)
+            self.dataframe_backend.save(feat_df, save_to=self.output_train_meta_path)
 
-        self.logger.info('Shape: {}'.format(df_feat.shape))
+        self.logger.info('Shape: {}'.format(feat_df.shape))
 
         self.logger.debug('Column Names')
-        for c in df_feat.columns:
+        for c in feat_df.columns:
             self.logger.debug(c)
 
-        return df_feat
+        return feat_df
 
     def predict(self, input_df, recreate=False):
         """
@@ -190,39 +199,38 @@ class AbstractFeature(object):
         if not recreate and self.feat_on_test_df is not None:
             return self.feat_on_test_df
         if self.has_parent:
-            df = self.parent.predict(input_df, recreate=recreate)
+            output_df = self.parent.predict(input_df, recreate=recreate)
         else:
-            df = input_df
-        df_pred = self.call(df, test=True)
+            output_df = input_df
+        pred_df = self.call(output_df, test=True)
 
         if Settings.CACHE_ON_TEST:
-            self.feat_on_test_df = df_pred
+            self.feat_on_test_df = pred_df
 
         if self.is_recording:
             os.makedirs(self.output_dir, exist_ok=True)
-            df_pred.to_csv(os.path.join(self.output_dir, 'test.csv'), index=False)
+            self.dataframe_backend.save(pred_df, self.output_test_meta_path)
 
-        return df_pred
+        return pred_df
 
 
 class MergeFeature(AbstractFeature):
     """
     特徴量同士を結合した特徴
     """
-    # merge するだけなので保存しない
+    # since it is simple operation, doesnt save local
     allow_save_local = False
 
     def __init__(self, input_features, name=None, root_dir=None):
         """
 
         Args:
-            input_features(list[AbstractFeature]): もととなる特徴量の list
+            input_features(list[AbstractFeature]): features are merged.
         """
         if name is None:
             name = '-'.join([f.name for f in input_features])
         self.features = input_features
 
-        # TODO: parent が複数あるばあいにもグラフ構造を担保して保存できるようにしたい
         super(MergeFeature, self).__init__(name, parent=None, root_dir=root_dir)
 
         names = [f.name for f in input_features]
@@ -248,9 +256,7 @@ class MergeFeature(AbstractFeature):
 
 
 class EnsembleFeature(MergeFeature):
-    """
-    子特徴量を平均化したものを返す特徴量
-    """
+    """ensemble all source features"""
     allow_save_local = True
 
     def call(self, df_source, y=None, test=False):
