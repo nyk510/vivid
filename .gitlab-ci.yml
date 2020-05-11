@@ -34,7 +34,6 @@ build-test:
 
 test:
   stage: test
-  extends: .use-docker
   image: ${REGISTRY_BASE}/test
   script:
     - export LOGLEVEL=INFO
