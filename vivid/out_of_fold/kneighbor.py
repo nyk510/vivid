@@ -5,24 +5,24 @@
 from optuna.trial import Trial
 from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
 
-from .base import BaseOutOfFoldFeature, BaseOptunaOutOfFoldFeature
+from .base import GenericOutOfFoldFeature, GenericOutOfFoldOptunaFeature
 
 
-class KNeighborClassifierOOF(BaseOutOfFoldFeature):
+class KNeighborClassifierOOF(GenericOutOfFoldFeature):
     model_class = KNeighborsClassifier
     initial_params = {
         'n_neighbors': 5
     }
 
 
-class KNeighborRegressorOutOfFold(BaseOutOfFoldFeature):
+class KNeighborRegressorOutOfFold(GenericOutOfFoldFeature):
     model_class = KNeighborsRegressor
     initial_params = {
         'n_neighbors': 5
     }
 
 
-class OptunaKNeighborRegressorOutOfFold(BaseOptunaOutOfFoldFeature):
+class OptunaKNeighborRegressorOutOfFold(GenericOutOfFoldOptunaFeature):
     model_class = KNeighborsRegressor
 
     def generate_model_class_try_params(self, trial: Trial):

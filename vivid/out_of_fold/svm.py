@@ -2,7 +2,7 @@ from copy import deepcopy
 
 from sklearn.svm import SVC, SVR
 
-from .base import BaseOutOfFoldFeature, BaseOptunaOutOfFoldFeature
+from .base import GenericOutOfFoldFeature, GenericOutOfFoldOptunaFeature
 
 SVM_DEFAULT_PARAMS = {
     'C': 0.1,
@@ -15,12 +15,12 @@ SVM_DEFAULT_PARAMS = {
 }
 
 
-class SVCOutOfFold(BaseOutOfFoldFeature):
+class SVCOutOfFold(GenericOutOfFoldFeature):
     model_class = SVC
     initial_params = deepcopy(SVM_DEFAULT_PARAMS)
 
 
-class SVROutOfFold(BaseOutOfFoldFeature):
+class SVROutOfFold(GenericOutOfFoldFeature):
     model_class = SVR
     initial_params = {
         'input_scaling': 'standard'
@@ -40,7 +40,7 @@ def get_svm_parameter_suggestions(trial):
     return params
 
 
-class SVCOptunaOutOfFold(BaseOptunaOutOfFoldFeature):
+class SVCOptunaOutOfFold(GenericOutOfFoldOptunaFeature):
     model_class = SVC
     initial_params = deepcopy(SVM_DEFAULT_PARAMS)
     optuna_jobs = 1
@@ -50,7 +50,7 @@ class SVCOptunaOutOfFold(BaseOptunaOutOfFoldFeature):
         return params
 
 
-class SVROptunaOutOfFold(BaseOptunaOutOfFoldFeature):
+class SVROptunaOutOfFold(GenericOutOfFoldOptunaFeature):
     model_class = SVR
     optuna_jobs = 1
     initial_params = {
