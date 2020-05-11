@@ -1,3 +1,5 @@
+from typing import Type
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -97,6 +99,45 @@ class TestOneHotEncodingAtom(BaseTestCase):
 
         atom = Atom()
         feat_train = atom.generate(self.train_df, self.y)
+
+
+@pytest.fixture()
+def input_df() -> pd.DataFrame:
+    return pd.DataFrame([[1, 1, 1, 2, 2, 3, 4, None]], index=['feature']).T
+
+
+@pytest.fixture()
+def TestOneHot() -> Type[OneHotEncodingAtom]:
+    class TestOneHot(OneHotEncodingAtom):
+        use_columns = ['feature']
+
+    return TestOneHot
+
+
+@pytest.mark.parametrize('min_freq, expect_cols', [
+    (2, 2),
+    (0, 4),
+    (-1, 4),
+    (.5, 0),
+    (1 / 8, 4)
+])
+def test_one_hot_min_freq(min_freq, expect_cols, input_df, TestOneHot):
+    atom = TestOneHot(min_freq=min_freq)
+    out_df = atom.fit_transform(input_df, y=input_df)
+    assert len(out_df.columns) == expect_cols
+
+
+@pytest.mark.parametrize('max_cols, expect_cols', [
+    (10, 4),  # No Effect
+    (4, 4),
+    (3, 3),
+    (3.5, 3),  # float floor to smaller integer
+    (-1, 0)  # remove all column
+])
+def test_one_hot_max_cols(max_cols, expect_cols, TestOneHot, input_df):
+    atom = TestOneHot(max_columns=max_cols)
+    out_df = atom.fit_transform(input_df, y=input_df)
+    assert len(out_df.columns) == expect_cols
 
 
 class TestInnerMergeAtom(BaseTestCase):
