@@ -10,8 +10,6 @@ from sklearn.metrics import roc_auc_score, log_loss, accuracy_score, f1_score, m
     r2_score, mean_squared_log_error, median_absolute_error, explained_variance_score, cohen_kappa_score, \
     average_precision_score, precision_score, recall_score
 
-__author__ = "nyk510"
-
 
 def quadratic_weighted_kappa(y_true, y_pred):
     return cohen_kappa_score(y_true, y_pred, weights='quadratic')
