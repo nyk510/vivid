@@ -24,7 +24,7 @@ class Settings:
     CACHE_DIR = os.path.join(os.path.expanduser('~'), '.vivid')
 
     # using csv save / load backend class
-    DATAFRAME_BACKEND = 'vivid.backends.FeatherBackend'
+    DATAFRAME_BACKEND = 'vivid.backends.JoblibBackend'
 
 
 def get_dataframe_backend(name=None) -> AbstractBackend:
