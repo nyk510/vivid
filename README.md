@@ -4,6 +4,8 @@ Support Tools for Machine Learning Vividly 🚀
 
 ## Usage
 
+The concept of vivid is **easy to use**. Only make instance and run fit, vivid save model metrics and weights (like feature_imporance, pr/auc curve, training time, ...) .
+
 ```python
 from sklearn.datasets import load_boston
 import pandas as pd
@@ -13,7 +15,7 @@ df = pd.DataFrame(X)
 model = LGBMRegressorOutOfFold(name='lgbm', cv=6, root_dir='./')
 ```
 
-easy to make more and more complex stacking model
+VIVID makes it easy to describe model/feature relationships. For example, you can easily describe stacking, which can be quite complicated if you create it normally.
 
 ```python
 copy_feat = CopyFeature(name='copy', root_dir='./boston_stacking')
@@ -54,7 +56,7 @@ ens_all.fit(train_df, y)
 ## Install
 
 ```bash
-pip install git+https://gitlab.com/nyker510/vivid
+pip install python-vivid
 ```
 
 ## Sample Code
