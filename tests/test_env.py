@@ -1,6 +1,6 @@
 import pytest
 
-from vivid.backends import CSVBackend, JoblibBackend
+from vivid.backends.dataframes import CSVBackend, JoblibBackend
 from vivid.env import get_dataframe_backend, Settings
 
 
@@ -16,8 +16,8 @@ def test_load_from_cache():
 
 
 @pytest.mark.parametrize('name,expected_class', [
-    ('vivid.backends.CSVBackend', CSVBackend),
-    ('vivid.backends.JoblibBackend', JoblibBackend),
+    ('vivid.backends.dataframes.CSVBackend', CSVBackend),
+    ('vivid.backends.dataframes.JoblibBackend', JoblibBackend),
     ('tests.test_env.CustomBackend', CustomBackend)  # can import from string case
 ])
 def test_load_csv_backend(name, expected_class):
@@ -28,8 +28,8 @@ def test_load_csv_backend(name, expected_class):
 
 
 @pytest.mark.parametrize('name,expected_class', [
-    ('vivid.backends.CSVBackend', CSVBackend),
-    ('vivid.backends.JoblibBackend', JoblibBackend),
+    ('vivid.backends.dataframes.CSVBackend', CSVBackend),
+    ('vivid.backends.dataframes.JoblibBackend', JoblibBackend),
     ('tests.test_env.CustomBackend', CustomBackend)  # can import from string case
 ])
 def test_can_change_default_backend(name, expected_class):
