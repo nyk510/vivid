@@ -4,7 +4,7 @@ import warnings
 import pandas as pd
 
 
-class AbstractBackend:
+class DataFrameBackend:
     ext = 'csv'
 
     def get_ext(self):
@@ -22,14 +22,14 @@ class AbstractBackend:
         dirname = os.path.dirname(path)
         return os.path.join(dirname, f'{name}.{self.get_ext()}')
 
-    def save_core(self, df: pd.DataFrame, save_to: str, **kwargs):
+    def save(self, df: pd.DataFrame, save_to: str, **kwargs):
         raise NotImplementedError()
 
     def load(self, path_to_data: str, **kwargs):
         raise NotImplementedError()
 
 
-class CSVBackend(AbstractBackend):
+class CSVBackend(DataFrameBackend):
     """save and load csv as text format"""
 
     def save(self, df: pd.DataFrame, save_to: str, index=False, **kwargs):
@@ -39,7 +39,7 @@ class CSVBackend(AbstractBackend):
         return pd.read_csv(path_to_data, **kwargs)
 
 
-class FeatherBackend(AbstractBackend):
+class FeatherBackend(DataFrameBackend):
     """save and load feather-format library"""
     ext = 'feather'
 
@@ -52,7 +52,7 @@ class FeatherBackend(AbstractBackend):
         return feather.read_dataframe(path_to_data)
 
 
-class JoblibBackend(AbstractBackend):
+class JoblibBackend(DataFrameBackend):
     """save and load joblib"""
     ext = 'joblib'
 

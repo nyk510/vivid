@@ -3,8 +3,9 @@
 """
 
 import os
+from typing import Callable
 
-from .backends import AbstractBackend
+from .backends import DataFrameBackend, ExperimentBackend
 from .utils import import_string
 
 __author__ = "nyk510"
@@ -24,17 +25,28 @@ class Settings:
     CACHE_DIR = os.path.join(os.path.expanduser('~'), '.vivid')
 
     # using csv save / load backend class
-    DATAFRAME_BACKEND = 'vivid.backends.JoblibBackend'
+    DATAFRAME_BACKEND = 'vivid.backends.dataframes.JoblibBackend'
+
+    EXPERIMENT_BACKEND = 'vivid.backends.experiments.LocalExperimentBackend'
+    COMET_API_KEY = os.getenv('VIVID_COMET_API_KEY', None)
 
 
-def get_dataframe_backend(name=None) -> AbstractBackend:
-    loaded_backend = get_dataframe_backend.backend
+class CacheLoader:
+    def __init__(self, default_loader):
+        self.default_loader = default_loader
+        self.backend = None
 
-    if name or not loaded_backend:
-        loaded_backend = import_string(name or Settings.DATAFRAME_BACKEND)()
-        if not (get_dataframe_backend.backend or name):
-            get_dataframe_backend.backend = loaded_backend
-    return loaded_backend
+    def __call__(self, name=None):
+        backend = self.backend
+
+        if name or not backend:
+            backend = import_string(name or self.default_loader())()
+            if not (self.backend or name):
+                self.backend = backend
+        return backend
 
 
-get_dataframe_backend.backend = None
+get_dataframe_backend = CacheLoader(
+    default_loader=lambda: Settings.DATAFRAME_BACKEND)  # type: Callable[[str], DataFrameBackend]
+get_experiment_backend = CacheLoader(
+    default_loader=lambda: Settings.EXPERIMENT_BACKEND)  # type: Callable[[str], ExperimentBackend]
