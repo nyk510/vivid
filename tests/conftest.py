@@ -65,7 +65,7 @@ def clean_up(output_dir: str):
     from vivid.env import Settings, get_dataframe_backend
     Settings.CACHE_ON_TRAIN = True
     Settings.CACHE_ON_TEST = True
-    Settings.DATAFRAME_BACKEND = 'vivid.backends.FeatherBackend'
+    Settings.DATAFRAME_BACKEND = 'vivid.backends.dataframes.JoblibBackend'
     get_dataframe_backend.backend = None
     shutil.rmtree(output_dir)
     shutil.rmtree(RECORDING_DIR)
