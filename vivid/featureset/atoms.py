@@ -40,7 +40,7 @@ class AbstractAtom(TransformerMixin):
         try:
             cols = iter(self.use_columns)
         except TypeError as e:
-            raise TypeError('Invalid type `use_columns` assigned on {}. Must iterable object'.format(self))
+            raise TypeError('Invalid type `use_columns` assigned on {}. Must iterable obj'.format(self))
 
         if not all([isinstance(c, str) for c in cols]):
             raise ValueError('None Sting Value contains in `use_cols`. {}'.format(self.use_columns))
@@ -105,7 +105,7 @@ class StringContainsAtom(AbstractAtom):
 
     """
     queryset = {}
-    preprocess = 'default'
+    preprocess = 'default_loader'
 
     @property
     def use_columns(self):
@@ -118,8 +118,8 @@ class StringContainsAtom(AbstractAtom):
         if callable(self.preprocess):
             return self.preprocess(s)
 
-        if self.preprocess is not 'default':
-            raise ValueError('preprocess must be callable object. {}'.format(self))
+        if self.preprocess != 'default_loader':
+            raise ValueError('preprocess must be callable obj. {}'.format(self))
 
         try:
             s = s.lower()
