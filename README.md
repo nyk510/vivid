@@ -61,7 +61,7 @@ pip install python-vivid
 
 ## Sample Code
 
-In `/vivid/smaples`, Some sample script codes exist.
+In `/vivid/samples`, Some sample script codes exist.
 
 ## Developer
 
