@@ -9,7 +9,7 @@ def create_boosting_seed_blocks(feature_class: Type[BaseOutOfFoldFeature],
                                 parent: Union[None, AbstractFeature, List[AbstractFeature]] = None,
                                 prefix: str = None,
                                 add_init_params=None,
-                                n_seeds=5) -> EnsembleFeature:
+                                n_seeds=5,) -> EnsembleFeature:
     """
     Boosting Algorithm の seed averaging block を作成する関数.
     feature_class のパラメータに add_init_params & random_state が変わった single model * n_seeds
@@ -43,4 +43,5 @@ def create_boosting_seed_blocks(feature_class: Type[BaseOutOfFoldFeature],
         feats.append(feature_class(name=f'{prefix}_{seed_id:02d}', parent=parent, add_init_param=add_param))
 
     ensemble_feat = EnsembleFeature(parent=feats[:], name=f'{prefix}_ensemble')
+
     return ensemble_feat
