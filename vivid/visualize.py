@@ -1,17 +1,15 @@
-# coding: utf-8
-"""特徴量や予測値の可視化を手助けする tool の定義
+"""visualization tools
 """
-import os
+from typing import Union, List, Callable
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-import xgboost as xgb
-from matplotlib import cm
 from scipy.cluster.hierarchy import linkage
-from sklearn.metrics import roc_auc_score, f1_score, accuracy_score, log_loss, roc_curve, precision_score, recall_score
-from sklearn.model_selection import train_test_split
+from sklearn.base import BaseEstimator
+from sklearn.metrics import roc_curve, auc, precision_recall_curve, average_precision_score
+from sklearn.utils.multiclass import check_classification_targets
 
 from .sklearn_extend import PrePostProcessModel
 from .utils import get_logger
@@ -19,54 +17,8 @@ from .utils import get_logger
 logger = get_logger(__name__)
 
 
-def xgb_feature_importance(x, y, columns):
-    x_train, x_test, y_train, y_test = train_test_split(x, y, random_state=71)
-
-    unique, count = np.unique(y_train, return_counts=True)
-    y_sample_weight = dict(zip(unique, count))
-    sample_pos_weight = y_sample_weight[0] / y_sample_weight[1]
-    print('pos/neg samples:', y_sample_weight)
-
-    xgb_model = xgb.XGBClassifier(scale_pos_weight=sample_pos_weight,
-                                  gamma=1e-4,
-                                  reg_lambda=1e-1,
-                                  learning_rate=.1,
-                                  n_estimators=400,
-                                  colsample_bytree=.8)
-
-    xgb_model.fit(x_train, y_train, verbose=True
-                  , early_stopping_rounds=20, eval_metric="auc",
-                  eval_set=[(x_test, y_test)])
-
-    def calc_test_metrics(y_true, x_test, model):
-        auc = roc_auc_score(y_true, model.predict_proba(x_test)[:, 1])
-        acc = accuracy_score(y_true, model.predict(x_test))
-        return auc, acc
-
-    auc, acc = calc_test_metrics(y_test, x_test, xgb_model)
-    print('Validation AUC: {auc:.5f} acc: {acc:.5f}'.format(**locals()))
-
-    df_feature_importance = pd.DataFrame(data=[xgb_model.feature_importances_], columns=columns,
-                                         index=['feature_importance'])
-    df_feature_importance = df_feature_importance.T.sort_values('feature_importance')
-    axis = df_feature_importance.plot(kind='barh', figsize=(6, len(df_feature_importance.index) * .3))
-
-    return axis
-
-
 def corr_euclid_clustermap(df, n_rows=None, n_cols=None, cmap='viridis', z_score=None, **kwargs):
     """
-    seaborn.clustermap を row に対して euclid を, column に対して correlation で実行する
-    Args:
-        df(pd.DataFrame):
-        n_rows(int | float | None):
-        n_cols(int | float | None):
-        cmap(str):
-        kwargs:
-
-    Returns:
-        sns.Grid
-
     Example:
         >>> df = sns.load_data('iris')
         >>> corr_euclid_clustermap(df)
@@ -91,145 +43,162 @@ def corr_euclid_clustermap(df, n_rows=None, n_cols=None, cmap='viridis', z_score
     return grid
 
 
-def plot_value_count_summary(df: pd.DataFrame, column_name, color='C0', normalize=False):
-    col = df[column_name]
-    vc_i = col.value_counts(dropna=False, normalize=normalize)
-    count_null = col.isnull().sum()
+def check_y_and_pred(y_true, y_pred) -> (np.ndarray, np.ndarray, list):
+    if len(y_true.shape) == 2:
+        classes = range(y_true.shape[1])
+    else:
+        classes = [x for x in np.unique(y_true) if int(x) != 0]
+    n_classes = len(classes)
 
-    fig = plt.figure(figsize=(6, 4))
-    ax_i = fig.add_subplot(1, 1, 1)
-    ax_i = vc_i.plot(kind='barh', ax=ax_i, color=color)
-    ax_i.set_title('{column_name} null count: {count_null}'.format(**locals()))
-    ax_i.set_xlabel('#Count/#All (ratio)')
-    return fig, ax_i
-
-
-def plot_predict_distribution(df_pred, output_dir):
-    """
-    予測モデルの予測値分布が target の値によってどのように違うのかを可視化する plot
-    Args:
-        df_pred(pd.DataFrame): 予測値をカラムに持つデータフレーム.
-            `"target"` カラムに正解ラベルを格納して渡す.
-            target は {0, 1} を値に持つ必要がある.
-        output_dir(str): 画像を保存するディレクトリへのパス
-
-    Returns:
-
-    """
-    for model_name in df_pred.columns:
-        if model_name == 'target':
-            continue
-        g = sns.catplot(data=df_pred, x='target', y=model_name, kind='swarm')
-        g.fig.suptitle('Predict Distribution')
-        g.savefig(os.path.join(output_dir, 'target_swarm_y={}.png'.format(model_name)), dpi=150)
-
-        fig = plt.figure(figsize=(6, 4))
-        ax = fig.add_subplot(111)
-        s = df_pred[model_name]
-        s_pos = s[df_pred.target == 1]
-        s_neg = s[df_pred.target == 0]
-
-        try:
-            sns.distplot(s_neg, rug=True, hist=False, label='Target = 0 (Negative)', ax=ax)
-            sns.distplot(s_pos, rug=True, hist=False, label='Target = 1 (Positive)', ax=ax)
-        except np.linalg.LinAlgError as e:
-            logger.warning('distribution estimation is failed with {}'.format(e))
-
-        fig.tight_layout()
-        fig.savefig(os.path.join(output_dir, 'target_dist_y={}.png'.format(model_name)), dpi=150)
-        plt.close('all')
+    y_true = np.array(y_true).reshape(-1, n_classes)
+    y_pred = np.array(y_pred).reshape(-1, n_classes)
+    return y_true, y_pred, classes
 
 
-def calculate_scores(df_pred, y_true):
-    """
-    二値分類に関する score を網羅的に計算した DataFrame を計算する
+def visualize_distributions(y_true, y_pred, ax: Union[None, plt.Axes] = None):
+    check_classification_targets(y_true)
+    y_true, y_pred, classes = check_y_and_pred(y_true, y_pred)
+    n_classes = len(classes)
 
-    Args:
-        df_pred(pd.DataFrame): 各カラムに予測値の入ったデータフレーム. shape = (n_samples, n_estimators,)
-        y_true(np.ndarray): shape = (n_samples,)
+    if ax is None:
+        fig, axes = plt.subplots(figsize=(6 * n_classes, 5), ncols=n_classes)
+        if n_classes == 1:
+            axes = [axes]
+    else:
+        fig, axes = None, [ax]  # type: (None, List[plt.Axes])
 
-    Returns:
-        pd.DataFrame
-    """
-    scores = []
-    cols = []
-    for name, col in df_pred.T.iterrows():
-        if name == 'target':
-            continue
-        auc_i = roc_auc_score(y_true, col)
-        logloss_i = log_loss(y_true, col)
+    for y, pred, ax, class_name in zip(y_true.T, y_pred.T, axes, classes):
+        sns.distplot(pred[y == 1], ax=ax, label='Pos')
+        sns.distplot(pred[y == 0], ax=ax, label='Neg')
+        ax.set_xlabel(f'class = {classes}')
 
-        # Note: しきい値は 0.5 で決め打ちになっている
-        pred_label = list(np.where(col >= .5, 1, 0))
-        acc = accuracy_score(y_true, pred_label)
-        recall_i = recall_score(y_true, pred_label)
-
-        # f1/precision は予測ラベルが positive の集合が分母になるためそもそも positive の予測がないときには計算不能
-        # 無理やり計算しようとするとエラーになるため初めに予測値のうち positive のものの数を計算し場合分けする 
-        n_pred_pos = sum(pred_label)
-        if n_pred_pos < 1:
-            f1 = precision_i = 0
-        else:
-            f1 = f1_score(y_true, pred_label, )
-            precision_i = precision_score(y_true, pred_label)
-
-        scores.append([auc_i, logloss_i, f1, acc, recall_i, precision_i])
-        cols.append(name)
-
-    df_score = pd.DataFrame(scores, index=cols,
-                            columns=['auc_score', 'negative_logloss', 'f1_score', 'accuracy', 'recall', 'precision'])
-    df_score = df_score.sort_values('auc_score')
-    return df_score
-
-
-def plot_auc_curve(df_pred, y_true):
-    """
-
-    Args:
-        df_pred(pd.DataFrame):
-        y_true(np.ndarray):
-
-    Returns:
-
-    """
-    fig = plt.figure(figsize=(8, 6))
-    ax = fig.add_subplot(111)
-    _df = df_pred.copy()
-    if 'target' in _df.columns:
-        del _df['target']
-
-    # AUC の高い順に plot したいのでその順序 `ordering` を始めに算出する
-    # TODO: すべてのメトリックを計算することになっているので無駄が多い. metric 指定で計算できるようにしたい.
-    df_score = calculate_scores(_df, y_true)
-    ordering = df_score.sort_values('auc_score', ascending=False).index
-    for i, (name, pred) in enumerate(_df[ordering].T.iterrows()):
-        if name == 'target':
-            continue
-
-        fpr, pfr, _ = roc_curve(y_true, pred)
-        ax.plot(fpr, pfr, label=name, color=cm.viridis(i / len(df_pred.columns)))
-    # 対角線に基準線 (AUC=0.5) を引く
-    ax.plot(np.linspace(0, 1), np.linspace(0, 1), '--', color='grey')
-    fig.tight_layout()
-    box = ax.get_position()
-    ax.set_position([box.x0, box.y0, box.width * 0.5, box.height])
-
-    # Put a legend to the right of the current axis
-    ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
     return fig, ax
 
 
-def visualize_feature_importance(models, columns, plot_type='bar', ax=None, top_n=None, **plot_kwgs):
+def visualize_roc_auc_curve(y_true, y_pred, ax: Union[None, plt.Axes] = None,
+                            label_prefix: Union[None, str] = None) -> [Union[None, plt.Figure], plt.Axes]:
+    check_classification_targets(y_true)
+    fpr = dict()
+    tpr = dict()
+    roc_auc = dict()
+    y_true, y_pred, classes = check_y_and_pred(y_true, y_pred)
+    n_classes = len(classes)
+
+    for i in range(n_classes):
+        fpr[i], tpr[i], _ = roc_curve(y_true[:, i], y_pred[:, i])
+        roc_auc[i] = auc(fpr[i], tpr[i])
+
+    # Compute micro-average ROC curve and ROC area
+    fpr["micro"], tpr["micro"], _ = roc_curve(y_true.ravel(), y_pred.ravel())
+    roc_auc["micro"] = auc(fpr["micro"], tpr["micro"])
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(6, 6))  # type: (plt.Figure, plt.Axes)
+    else:
+        fig, ax = None, ax  # type: (None, plt.Axes)
+
+    for i in range(n_classes):
+        label_i = f'label = {i} / area = {roc_auc[i]:.3f}'
+        if label_prefix is not None:
+            label_i = f'{label_prefix} {label_i}'
+        ax.plot(fpr[i], tpr[i], label=label_i)
+    ax.plot(np.linspace(0, 1), np.linspace(0, 1), '--', color='grey')
+    ax.set_xlim(0, 1.)
+    ax.set_ylim(0, 1.05)
+    ax.set_xlabel('False Positive Rate')
+    ax.set_ylabel('True Positive Rate')
+    ax.set_title('ROC Auc Score')
+    ax.legend(loc='lower right')
+    return fig, ax
+
+
+def visualize_pr_curve(y_true, y_pred, ax: Union[None, plt.Axes] = None,
+                       label_prefix: Union[None, str] = None) -> [Union[None, plt.Figure], plt.Axes]:
+    check_classification_targets(y_true)
+    precision = dict()
+    recall = dict()
+    pr_score = dict()
+    y_true, y_pred, classes = check_y_and_pred(y_true, y_pred)
+    n_classes = len(classes)
+
+    for i in range(n_classes):
+        precision[i], recall[i], _ = precision_recall_curve(y_true[:, i], y_pred[:, i])
+        pr_score[i] = average_precision_score(y_true[:, i], y_pred[:, i])
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(6, 5))
+    else:
+        fig, ax = None, ax
+
+    for i in range(n_classes):
+        label_i = f'label = {i} / area = {pr_score[i]:.3f}'
+        if label_prefix is not None:
+            label_i = f'{label_prefix} {label_i}'
+        ax.plot(recall[i], precision[i], label=label_i)
+
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1.05)
+    ax.set_xlabel('Recall')
+    ax.set_ylabel('Precision')
+    ax.set_title('Precision Recall Curve')
+    ax.legend(loc='lower left')
+    return fig, ax
+
+
+class NotSupportedError(BaseException):
+    pass
+
+
+def extract_importance(clf: BaseEstimator):
+    attrs = [
+        'feature_importances_',  # scikit-learn random forest
+        'feature_importance_',  # xgboost / lightgbm
+        'coef_'  # scikit-learn linear model
+    ]
+    for att_name in attrs:
+        if hasattr(clf, att_name):
+            return getattr(clf, att_name)
+
+    raise NotSupportedError(f'Cant extract model feature importance. Check the classifier {type(clf)} support.' + \
+                            f'\n({clf}')
+
+
+def visualize_feature_importance(models,
+                                 columns,
+                                 plot_type='bar',
+                                 ax: Union[None, plt.Axes] = None,
+                                 top_n: Union[None, int] = None,
+                                 feature_extractor: Union[None, Callable[[BaseEstimator], np.ndarray]] = None,
+                                 **plot_kwgs):
     """
-    学習済みの Boosting Model から feature importance を plot
+    plot feature importance from a learned Model
+
+    Currently following model are supported.
+        * scikit learn's
+            * linear model
+            * random forest
+        * xgboost (sklearn interface)
+        * lightgbm (sklearn interface)
+
+    The `extract_importance` method is used to retrieve features from a model. See also.
 
     Args:
-        models: 学習済み Boosting モデル (LightGBM or XGBoost)
-        columns: 特徴量の名前の List
-        plot_type: `"bar"` or `"boxen"`
-        top_n: int が指定された時, 上位 n 件を plot します
-        ax: matplotlib.ax object. None のとき新しく fig, ax を作成します
+        models:
+            list of trained models.
+        columns:
+            List of names of feature
+        plot_type:
+            `"bar"` or `"boxen"`.
+        top_n:
+            When int is specified, plot the top n items
+        ax:
+            matplotlib plt.Axes obj. Create a new fig, ax if none
+        feature_extractor:
+            It is an argument for plotting a feature for an unsupported model.
+            If set, the feature-grabbing method is overridden.
+            Must be a function that takes model as an argument and returns a np array.
         **plot_kwgs:
+            plot extra kwrgs. pass to seaborn.plot function.
 
     Returns:
         ax is None, return fig, ax, feature importance df
@@ -237,17 +206,21 @@ def visualize_feature_importance(models, columns, plot_type='bar', ax=None, top_
     """
 
     # set matplotlib loglevel 'ERROR' (avoid 'c' argument looks like a single numeric RGB or RGBA sequence)
-    # たぶん seaborn のバグ?
     from matplotlib.axes._axes import _log as matplotlib_axes_logger
     matplotlib_axes_logger.setLevel('ERROR')
+
+    if feature_extractor is None: feature_extractor = extract_importance
     importance_df = pd.DataFrame()
 
     for i, model in enumerate(models):
         _df = pd.DataFrame()
         if isinstance(model, PrePostProcessModel):
-            _df['feature_importance'] = model.fitted_model_.feature_importances_
+            clf = model.fitted_model_
         else:
-            _df['feature_importance'] = model.feature_importances_
+            clf = model
+
+        importance = feature_extractor(clf)
+        _df['feature_importance'] = np.array(importance).reshape(-1)
         _df['column'] = columns
         _df['fold'] = i + 1
         importance_df = pd.concat([importance_df, _df], axis=0, ignore_index=True)
@@ -259,7 +232,7 @@ def visualize_feature_importance(models, columns, plot_type='bar', ax=None, top_
         order = order[:top_n]
 
     if ax is None:
-        fig = plt.figure(figsize=(7, len(order) * .25))
+        fig = plt.figure(figsize=(7, len(order) * .25 + 2))
         ax = fig.add_subplot(111)
     else:
         fig = None
