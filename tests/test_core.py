@@ -6,8 +6,13 @@ import os
 import pandas as pd
 import pytest
 
-from vivid.core import MergeFeature, EnsembleFeature, AbstractFeature
+from vivid.core import AbstractFeature
 from .conftest import SampleFeature
+
+
+class SimpleMergeFeature(AbstractFeature):
+    def call(self, df_source: pd.DataFrame, y=None, test=False) -> pd.DataFrame:
+        return df_source
 
 
 def test_merge_feature(train_data):
@@ -15,7 +20,7 @@ def test_merge_feature(train_data):
     train_df, y = train_data
     feat1 = SampleFeature()
     feat2 = SampleFeature()
-    merged = MergeFeature(input_features=[feat1, feat2])
+    merged = SimpleMergeFeature(name='merge', parent=[feat1, feat2])
     pred = merged.predict(train_df)
 
     n_cols = 0
@@ -26,16 +31,6 @@ def test_merge_feature(train_data):
 
     assert pred.shape[0] == len(y)
     assert not merged.is_recording
-
-
-def test_ensemble_feature(train_data):
-    train_df, y = train_data
-    feat1 = SampleFeature()
-    feat2 = SampleFeature()
-
-    ensemble = EnsembleFeature([feat1, feat2])
-    pred = ensemble.predict(train_df)
-    assert len(train_df) == len(pred)
 
 
 def test_abstract_feature(output_dir):
