@@ -10,11 +10,21 @@ from sklearn.model_selection import KFold, StratifiedKFold
 
 from tests.conftest import SampleFeature, RecordingFeature
 from vivid.out_of_fold import boosting
-from vivid.out_of_fold.base import NotFittedError, BaseOutOfFoldFeature
+from vivid.out_of_fold.base import NotFittedError, BaseOutOfFoldFeature, EnsembleFeature
 from vivid.out_of_fold.ensumble import RFRegressorFeatureOutOfFold
 from vivid.out_of_fold.kneighbor import OptunaKNeighborRegressorOutOfFold
 
 base_feat = SampleFeature()
+
+
+def test_ensemble_feature(train_data):
+    train_df, y = train_data
+    feat1 = SampleFeature()
+    feat2 = SampleFeature()
+
+    ensemble = EnsembleFeature(name='ens', parent=[feat1, feat2])
+    pred = ensemble.predict(train_df)
+    assert len(train_df) == len(pred)
 
 
 def test_serializing(regression_data):
@@ -62,7 +72,7 @@ def test_recording(model_class: Type[BaseOutOfFoldFeature], regression_data, bin
     clf.fit(df, y)
 
     assert clf.is_recording, clf
-    assert clf.finish_fit, clf
+    assert clf.is_train_finished, clf
 
     # 学習後なのでモデルの重みが無いとだめ
     assert os.path.exists(clf.model_param_path), clf
@@ -83,7 +93,7 @@ def test_add_sample_weight(regression_data):
     model = RFRegressorFeatureOutOfFold(name='rf', sample_weight=sample_weight)
     model.fit(df, y)
 
-    for clf, (idx_train, idx_valid) in zip(model.fitted_models, model.get_fold_splitting(df.values, y)):
+    for clf, (idx_train, idx_valid) in zip(model._fitted_models, model.get_fold_splitting(df.values, y)):
         assert np.array_equal(clf.fit_params_.get('sample_weight', None), sample_weight[idx_train])
 
 
@@ -115,6 +125,22 @@ def test_custom_cv_as_list():
         assert np.array_equal(cv_idxes[1], clf_indexes[1])
 
 
+@pytest.mark.parametrize('n_folds, expected', [
+    (None, 5),
+    (-1, 0),
+    (0, 0),
+    (.5, 1),
+    (5, 5),
+    (6, 5)
+])
+def test_short_n_fold(regression_data, n_folds, expected):
+    input_df, y = regression_data
+    model = boosting.XGBoostRegressorOutOfFold(name='xgb', cv=5)
+    fitted_models, _ = model.run_oof_train(input_df.values, y, {}, n_fold=n_folds)
+
+    assert len(fitted_models) == expected
+
+
 def test_updated_model_parameters_add_init_params(regression_data):
     add_params = {
         'n_estimators': 1,
@@ -124,7 +150,7 @@ def test_updated_model_parameters_add_init_params(regression_data):
     input_df, y = regression_data
     model.fit(input_df, y)
 
-    for m in model.fitted_models:
+    for m in model._fitted_models:
         for key, value in add_params.items():
             assert getattr(m.fitted_model_, key) == value
 
@@ -142,7 +168,7 @@ def test_optuna_change_metric(metric_func, regression_data):
 
     X = df.values
     scores = []
-    for clf, (idx_train, idx_valid) in zip(model.fitted_models, model.get_fold_splitting(X, y)):
+    for clf, (idx_train, idx_valid) in zip(model._fitted_models, model.get_fold_splitting(X, y)):
         pred_i = clf.predict(X[idx_valid])
         score = metric_func(y[idx_valid], pred_i)
         scores.append(score)
