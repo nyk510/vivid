@@ -1,15 +1,15 @@
 from copy import deepcopy
-from typing import Type
+from typing import Type, Union, List
 
-from vivid.core import AbstractFeature, EnsembleFeature
-from vivid.out_of_fold.base import BaseOutOfFoldFeature
+from vivid.core import AbstractFeature
+from vivid.out_of_fold.base import BaseOutOfFoldFeature, EnsembleFeature
 
 
 def create_boosting_seed_blocks(feature_class: Type[BaseOutOfFoldFeature],
-                                parent: AbstractFeature = None,
+                                parent: Union[None, AbstractFeature, List[AbstractFeature]] = None,
                                 prefix: str = None,
                                 add_init_params=None,
-                                n_seeds=5):
+                                n_seeds=5) -> EnsembleFeature:
     """
     Boosting Algorithm の seed averaging block を作成する関数.
     feature_class のパラメータに add_init_params & random_state が変わった single model * n_seeds
@@ -42,8 +42,5 @@ def create_boosting_seed_blocks(feature_class: Type[BaseOutOfFoldFeature],
 
         feats.append(feature_class(name=f'{prefix}_{seed_id:02d}', parent=parent, add_init_param=add_param))
 
-    if n_seeds > 1:
-        root_dir = parent.root_dir if parent is not None else None
-        ensemble_feat = EnsembleFeature(feats[:], name=f'{prefix}_ensemble', root_dir=root_dir)
-        feats.append(ensemble_feat)
-    return feats
+    ensemble_feat = EnsembleFeature(parent=feats[:], name=f'{prefix}_ensemble')
+    return ensemble_feat
