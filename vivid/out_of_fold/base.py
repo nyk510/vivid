@@ -334,8 +334,15 @@ class BaseOutOfFoldFeature(AbstractFeature):
 
     def save_model_parameters(self, best_models: List[PrePostProcessModel]) -> List[dict]:
         model_parameters = []
+        use_keys = ['model_params', 'output_dir']
         for m in best_models:
-            model_parameters.append(m.get_params(deep=False))
+            param_i = m.get_params(deep=False)
+            add_param_i = {}
+            for k in use_keys:
+                add_param_i[k] = param_i[k]
+
+            model_parameters.append(add_param_i)
+
         joblib.dump(model_parameters, self.model_param_path)
         return model_parameters
 
