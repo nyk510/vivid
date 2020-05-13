@@ -1,3 +1,5 @@
+from typing import Union
+
 from keras.callbacks import Callback
 from keras.layers import Dropout, Dense, Input, BatchNormalization
 from keras.models import Model
@@ -48,9 +50,9 @@ class ROCAucCallback(Callback):
 
 
 class SkerasMixin:
-    def fit(self, x, y, sample_weight=None, **kwargs):
+    def fit(self: Union['SkerasMixin', KerasClassifier], x, y, sample_weight=None, **kwargs):
         self.sk_params['n_input'] = x.shape[1]
-        history = super().fit(x, y, sample_weight=sample_weight, **kwargs)
+        history = super(SkerasMixin, self).fit(x, y, sample_weight=sample_weight, **kwargs)
         self.history_ = history
         return self
 
