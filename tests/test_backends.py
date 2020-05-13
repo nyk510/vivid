@@ -2,7 +2,7 @@ import os
 
 import pytest
 
-from vivid.backends import CSVBackend, JoblibBackend, FeatherBackend, AbstractBackend
+from vivid.backends.dataframes import CSVBackend, JoblibBackend, FeatherBackend, DataFrameBackend
 
 
 @pytest.mark.parametrize('name,expect', [
@@ -12,7 +12,7 @@ from vivid.backends import CSVBackend, JoblibBackend, FeatherBackend, AbstractBa
     ('/foo--/path/to/myfile.foo', '/foo--/path/to/myfile.csv'),
 ])
 def test_filename(name, expect):
-    backend = AbstractBackend()
+    backend = DataFrameBackend()
     backend.ext = 'csv'
     assert backend.to_filename(name) == expect
 
@@ -31,7 +31,7 @@ def test_backend(backend_class, output_dir, toy_df):
 
 
 def test_invalid_ext_warning():
-    class InvalidExtBackend(AbstractBackend):
+    class InvalidExtBackend(DataFrameBackend):
         ext = '.foo'
 
     backend = InvalidExtBackend()
