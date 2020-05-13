@@ -7,11 +7,8 @@ import pytest
 
 from vivid.core import AbstractFeature
 
-RECORDING_DIR = '/workspace/output'
-os.makedirs(RECORDING_DIR, exist_ok=True)
-
-# テスト時に使う出力先フォルダ
-OUTPUT_DIR = os.environ.get('OUTPUT_DIR', '/test_cache')
+HOME = os.path.expanduser('~')
+RECORDING_DIR = os.path.join(HOME, '.vivid', 'test')
 
 
 class SampleFeature(AbstractFeature):
