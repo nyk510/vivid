@@ -1,11 +1,9 @@
 import copy
-import json
 import os
 from collections.abc import Iterable
 from typing import List, Union, Callable, Tuple
 
 import joblib
-import matplotlib.pyplot as plt
 import numpy as np
 import optuna
 import pandas as pd
@@ -14,14 +12,17 @@ from optuna.trial import Trial
 from sklearn.base import is_regressor
 from sklearn.exceptions import NotFittedError
 from sklearn.metrics import check_scoring
-from sklearn.metrics._scorer import _BaseScorer
+from sklearn.metrics._scorer import _BaseScorer, SCORERS
 from sklearn.model_selection import KFold, check_cv
+from tabulate import tabulate
 
-from vivid.core import AbstractFeature, MergeFeature
+from vivid.core import AbstractFeature
 from vivid.env import Settings
-from vivid.metrics import binary_metrics, upper_accuracy, regression_metrics
+from vivid.metrics import binary_metrics, regression_metrics
 from vivid.sklearn_extend import PrePostProcessModel
 from vivid.utils import timer
+from vivid.visualize import visualize_feature_importance, visualize_roc_auc_curve, visualize_pr_curve, \
+    visualize_distributions, NotSupportedError
 
 
 def create_default_cv():
@@ -38,27 +39,27 @@ class BaseOutOfFoldFeature(AbstractFeature):
     """
     initial_params = {}
     model_class = None
-    _serialize_filaname = 'fitted_models.joblib'
+    _parameter_path = 'model_parameters.joblib'
 
     def __init__(self, name, parent=None, cv=None, groups=None, sample_weight=None,
-                 add_init_param=None, root_dir=None, verbose=1):
+                 add_init_param=None, root_dir=None):
         """
 
         Args:
             name: Model name. Recommended to use a unique string throughout the same project.
             parent: parent feature instance.
             cv: Kfold instance or Number or Iterable or None.
-                If Set None, use default cv strategy.
+                If Set None, use default_loader cv strategy.
             groups:
                 Groups which use in group-k-fold
                 only valid if you set Group K-Fold on cv.
             sample_weight:
                 sample weight. shape = (n_train,)
-            add_init_param: additional init params. class attribute `init_params` are updated by it.
+            add_init_param:
+                additional init params. class attribute `init_params` are updated by it.
             root_dir:
-            verbose:
+                root_dir, pass to `AbstractFeature`.
         """
-        self.verbose = verbose
 
         if cv is None:
             cv = create_default_cv()
@@ -66,9 +67,6 @@ class BaseOutOfFoldFeature(AbstractFeature):
         self._checked_cv = None
         self.groups = groups
         self.sample_weight = sample_weight
-
-        self.is_regression_model = is_regressor(self.model_class())
-
         self._initial_params = copy.deepcopy(self.initial_params)
 
         if add_init_param:
@@ -76,12 +74,18 @@ class BaseOutOfFoldFeature(AbstractFeature):
 
         super(BaseOutOfFoldFeature, self).__init__(name, parent, root_dir=root_dir)
         self.logger.info(self.name)
-        self.finish_fit = False
+        self.is_train_finished = False
+
+    @property
+    def is_regression_model(self):
+        """whether the `model_class` instance is regression model or Not"""
+        return is_regressor(self.model_class())
 
     @property
     def model_param_path(self):
+        """If it is recording context, return the path to the array of k-fold model parameters"""
         if self.is_recording:
-            return os.path.join(self.output_dir, self._serialize_filaname)
+            return os.path.join(self.output_dir, self._parameter_path)
         return None
 
     @property
@@ -90,7 +94,7 @@ class BaseOutOfFoldFeature(AbstractFeature):
             return self._checked_cv.n_splits
         return None
 
-    def load_best_models(self):
+    def load_best_models(self) -> List[PrePostProcessModel]:
         """load fitted models from local model parameters."""
         if self.output_dir is None:
             raise NotFittedError('Feature run without recording. Must Set Output Dir. ')
@@ -101,30 +105,30 @@ class BaseOutOfFoldFeature(AbstractFeature):
         param_list = joblib.load(self.model_param_path)
         models = []
         for params in param_list:
-            model = self.create_model({}, prepend_name=params['prepend_name'], recording=True)
+            model = self.create_model({}, output_dir=params.get('output_dir'))
             model.load_trained_model()
             models.append(model)
         return models
 
     def get_fold_splitting(self, X, y) -> Iterable:
-        # If cv is iterable object, convert to list and return
+        # If cv is iterable obj, convert to list and return
         if isinstance(self.cv, Iterable):
             return list(self.cv)
         if self._checked_cv is None:
             self._checked_cv = check_cv(self.cv, y, classifier=self.model_class)
-        return self._checked_cv.split(X, y, self.groups)
+        return list(self._checked_cv.split(X, y, self.groups))
 
-    def _predict_trained_models(self, test_df: pd.DataFrame):
-        if not self.finish_fit:
+    def _predict_trained_models(self, test_df: pd.DataFrame) -> pd.DataFrame:
+        if not self.is_train_finished:
             models = self.load_best_models()
         else:
-            models = self.fitted_models
+            models = self._fitted_models
 
         if self.is_regression_model:
-            kfold_predicts = [model.predict(test_df.values) for model in models]
+            fold_predicts = [model.predict(test_df.values) for model in models]
         else:
-            kfold_predicts = [model.predict(test_df.values, prob=True)[:, 1] for model in models]
-        preds = np.asarray(kfold_predicts).mean(axis=0)
+            fold_predicts = [model.predict(test_df.values, prob=True)[:, 1] for model in models]
+        preds = np.asarray(fold_predicts).mean(axis=0)
         df = pd.DataFrame(preds.T, columns=[str(self)])
         return df
 
@@ -142,16 +146,17 @@ class BaseOutOfFoldFeature(AbstractFeature):
         """
         return self._initial_params
 
-    def get_params_on_each_fold(self, default_params: dict, indexes_set: Tuple[np.ndarray, np.ndarray]) -> dict:
+    def get_model_params_on_each_fold(self, default_params: dict, indexes_set: Tuple[np.ndarray, np.ndarray]) -> dict:
         """
-        generate model init parameter (pass to sklearn classifier/regressor constructor) on each fold
+        Generate model init parameter (pass to sklearn classifier/regressor constructor) on each fold
+        it is pass to `model_class`` constructor (i.e. __init__(**params))
 
         Args:
-            default_params: default model parameter.
-            indexes_set: index set (idx_train, idx_valid).
+            default_params: default parameter.
+            indexes_set: train and validation index list for each fold.
 
         Returns:
-            init parameter
+            parameter pass to model class
         """
         params = copy.deepcopy(default_params)
         return params
@@ -161,13 +166,14 @@ class BaseOutOfFoldFeature(AbstractFeature):
                                     validation_set: Tuple[np.ndarray, np.ndarray],
                                     indexes_set: Tuple[np.ndarray, np.ndarray]) -> dict:
         """
-        generate fit params (i.e. kwrgs in `clf.fit(X, y, **kwrgs)`) on each fold.
-        By default, set sample_weight when sample_weight is passed to the constructor.
+        generate fit params (i.e. kwrgs in `clf.fit(X, y_true, **kwrgs)`) on each fold.
+        By default_loader, set sample_weight when sample_weight is passed to the constructor.
 
         Args:
-            model_params: model parameters. It pass to model constructor.
+            model_params: model parameters. It have been pass to model constructor.
+            training_set: training (X_train, y_train) dataset. tuple of numpy array.
             validation_set: validation (X_valid, y_valid) dataset. tuple of numpy array.
-            indexes_set: index set (idx_train, idx_valid). Use when set sample_weight on each fold.
+            indexes_set: train and validation index list for each fold.
 
         Returns:
             fit parameter dict
@@ -184,25 +190,35 @@ class BaseOutOfFoldFeature(AbstractFeature):
         X, y = df_source.values, y
         default_params = self.generate_default_model_parameter(X, y)
 
-        models, oof = self.run_oof_train(X, y, default_params)
-        self.fitted_models = models
+        with self.exp_backend.mark_time(prefix='train_'):
+            models, oof = self.run_oof_train(X, y, default_params)
 
-        self.finish_fit = True
-        self.after_kfold_fitting(df_source, y, oof)
+        self._fitted_models = models
+
+        self.is_train_finished = True
         oof_df = pd.DataFrame(oof, columns=[str(self)])
         return oof_df
 
-    def run_oof_train(self, X, y, default_params, recording=True) -> ([List[PrePostProcessModel], np.ndarray]):
+    def run_oof_train(self, X, y, default_params,
+                      n_fold: Union[int, None] = None) -> ([List[PrePostProcessModel], np.ndarray]):
         """
         main training loop.
 
         Args:
-            X: input feature. shape = (n_samples, n_features)
-            y: target. shape = (n_samples, n_classes)
-            default_params: default model parameter. pass to model constructor (not fit)
+            X:
+                training array.
+            y:
+                target array
+            default_params:
+                model parameter using by default. pass to model constructor (not fit)
                 If you change fit parameter like `eval_metric`, override get_fit_params_on_each_fold.
-            recording: Whether save trained model each fold.
-
+            n_fold:
+                Number of fold to fit. If set None, learn for all folds.
+                If set number, stop fit model reach to the value.
+                    * if n_fold = None, run all folds
+                    * if n_fold = 1, stop one fold.
+                    * if n_fold > num_cv, run all folds
+                    * if n_fold <= 0, no fold run, return empty list and zero vector out-of-fold
         Returns:
             list of fitted models and out-of-fold numpy array.
         """
@@ -210,21 +226,23 @@ class BaseOutOfFoldFeature(AbstractFeature):
         splits = self.get_fold_splitting(X, y)
         models = []
 
-        self.logger.info('CV: {}'.format(str(self._checked_cv)))
-
         for i, (idx_train, idx_valid) in enumerate(splits):
+            if n_fold is not None and i >= max(0, n_fold):
+                self.logger.info(f'Stop K-Fold at {i}')
+                break
+
             self.logger.info('start k-fold: {}/{}'.format(i + 1, self.num_cv))
 
             X_i, y_i = X[idx_train], y[idx_train]
             X_valid, y_valid = X[idx_valid], y[idx_valid]
 
             with timer(self.logger, format_str='Fold: {}/{}'.format(i + 1, self.num_cv) + ' {:.1f}[s]'):
+                output_i = None if not self.is_recording else os.path.join(self.output_dir, f'fold_{i:02d}')
                 clf = self._fit_model(X_i, y_i,
                                       default_params=default_params,
                                       validation_set=(X_valid, y_valid),
                                       indexes_set=(idx_train, idx_valid),
-                                      prepend_name=i,
-                                      recording=recording)
+                                      output_dir=output_i)
 
             if self.is_regression_model:
                 pred_i = clf.predict(X_valid).reshape(-1)
@@ -233,9 +251,22 @@ class BaseOutOfFoldFeature(AbstractFeature):
 
             oof[idx_valid] = pred_i
             models.append(clf)
+
         return models, oof
 
-    def create_model(self, model_params, prepend_name, recording=False) -> PrePostProcessModel:
+    def create_model(self, model_params, output_dir=None) -> PrePostProcessModel:
+        """
+        create new `PrePostProcessModel` instance that has our `model_class`.
+
+        Args:
+            model_params:
+                parameters pass to `PrePostProcessModel` constructor (i.e. __init__ method)
+            output_dir:
+                created pre-post process model output.
+
+        Returns:
+            new PrePoseProcessModel
+        """
         target_logscale = model_params.pop('target_logscale', False)
         target_scaling = model_params.pop('target_scaling', None)
         input_logscale = model_params.pop('input_logscale', False)
@@ -247,9 +278,7 @@ class BaseOutOfFoldFeature(AbstractFeature):
                                     target_scaling=target_scaling,
                                     input_logscale=input_logscale,
                                     input_scaling=input_scaling,
-                                    output_dir=self.output_dir if recording else None,
-                                    prepend_name=prepend_name,
-                                    verbose=self.verbose,
+                                    output_dir=output_dir,
                                     logger=self.logger)
         return model
 
@@ -259,25 +288,26 @@ class BaseOutOfFoldFeature(AbstractFeature):
                    default_params: dict,
                    validation_set: tuple,
                    indexes_set: tuple,
-                   prepend_name=None,
-                   recording=False) -> PrePostProcessModel:
+                   output_dir=None) -> PrePostProcessModel:
         """
-        in model_params, add scaling parameters for target / input (ex. target_scaling = False)
+        train a new model class.
+
+        Notes:
+            in model_params, add scaling parameters for target / input (ex. target_scaling = False)
 
         Args:
             X: training feature. numpy array. shape = (n_train, n_features)
             y: target. shape = (n_train, n_classes)
-            default_params(dict): parameters pass into model constructor
+            default_params: parameters pass into model constructor
             validation_set:
             indexes_set:
-            prepend_name: prepend name (use on save model)
-            recording: If True, save trained model to local storage.
+            output_dir: prepend name (use on save model)
 
         Returns:
             trained model
         """
-        model_params = self.get_params_on_each_fold(default_params, indexes_set)
-        model = self.create_model(model_params, prepend_name=str(prepend_name), recording=recording)
+        model_params = self.get_model_params_on_each_fold(default_params, indexes_set)
+        model = self.create_model(model_params, output_dir=output_dir)
 
         # MEMO: validation data are not transform so validation score is invalid (in boosting model, eval_set)
         model._before_fit(X, y)
@@ -294,9 +324,12 @@ class BaseOutOfFoldFeature(AbstractFeature):
         model.fit(X, y, **fit_params)
         return model
 
-    def after_kfold_fitting(self, df_source, y, predict):
+    def post_fit(self,
+                 input_df: pd.DataFrame, parent_output_df: pd.DataFrame,
+                 out_df: pd.DataFrame, y: np.ndarray) -> pd.DataFrame:
         if self.is_recording:
-            self.save_model_parameters(self.fitted_models)
+            self.save_model_parameters(self._fitted_models)
+        return super(BaseOutOfFoldFeature, self).post_fit(input_df, parent_output_df, out_df, y)
 
     def save_model_parameters(self, best_models: List[PrePostProcessModel]) -> List[dict]:
         model_parameters = []
@@ -313,19 +346,26 @@ class BaseOptunaOutOfFoldFeature(BaseOutOfFoldFeature):
     optuna_jobs = -1  # optuna parallels
     SCORING_STRATEGY_CHOICES = ['fold', 'whole']  # choice of scoring strategy
 
-    def __init__(self, n_trials=200, scoring_strategy='fold', scoring: Union[str, Callable] = 'default',
+    def __init__(self,
+                 n_trials=200,
+                 scoring_strategy='fold',
+                 scoring: Union[str, Callable, None] = None,
                  **kwargs):
         """
         Optuna Optimization Model Feature
 
         Args:
-            n_trials: total number of trials.
+            n_trials:
+                total number of trials.
             scoring_strategy:
                 out-of-fold scoring strategy.
                 If set as `"fold"`, the score are calculated each by fold and use mean of them for optimization.
                 If set as `"whole"`, the score is calculated whole data.
-            scoring: scoring method. String or Scoring Object (scoring object must be satisfied check_scoring validation)
-            **kwargs: pass to superclass
+            scoring:
+                scoring method. String or Scoring Object
+                 (scoring obj must be satisfied check_scoring validation)
+            **kwargs:
+                pass to superclass
         """
         super(BaseOptunaOutOfFoldFeature, self).__init__(**kwargs)
         self.study = None  # type: Union[Study, None]
@@ -334,38 +374,55 @@ class BaseOptunaOutOfFoldFeature(BaseOutOfFoldFeature):
         if scoring_strategy not in self.SCORING_STRATEGY_CHOICES:
             raise ValueError('`scoring_strategy` must be in {}'.format(','.join(self.SCORING_STRATEGY_CHOICES)))
         self.scoring_strategy = scoring_strategy
-        if scoring == 'default':
+        if scoring is None:
             if self.is_regression_model:
                 scoring = 'neg_root_mean_squared_error'
             else:
                 scoring = 'roc_auc'
-        scoring = check_scoring(self.model_class, scoring=scoring, allow_none=False)
+
+        try:
+            scoring = check_scoring(self.model_class, scoring=scoring, allow_none=False)
+        except ValueError as e:
+            s = f'Invalid scoring argument: {scoring}. You can select scoring method from pre-defineds as follow\n'
+            s += ', '.join(SCORERS.keys())
+            raise ValueError(s)
         self.scoring_method = scoring  # type: _BaseScorer
 
-    def generate_model_class_try_params(self, trial: Trial) -> dict:
-        """
-        model の init で渡すパラメータの探索範囲を取得する method
+        self.exp_backend.mark('n_trials', self.n_trails)
+        self.exp_backend.mark('scoring_strategy', self.scoring_strategy)
+        self.exp_backend.mark('scoring', str(self.scoring_method))
 
-        NOTE:
-            この method で変えられるのはあくまで init に渡す引数だけです.
-            より複雑な条件を変更する際には `get_object` を override することを検討して下さい.
+    def generate_model_class_try_params(self, trial: Trial) -> dict:
+        """method to get the range of parameters to look for in the model's init
+        The created value overrides the class variable and becomes the initial value of the model.
+        More details, see `generate_try_parameter` as below.
+
+        Notes:
+            This method only changes the arguments you pass to init:
+            Consider overriding `get_object` if you want to change more complex conditions.
 
         Args:
             trial(Trial):
+                current trial object. create parameter using it.
 
-        Returns(dict):
-
+        Returns:
+            generated model parameter
         """
-        return {}
+        raise NotImplementedError(
+            'Must implement `generate_model_class_try_params`.'
+            'This method is the most core method of this class, which creates '
+            'the parameters to use in each optimization attempt.')
 
     def generate_try_parameter(self, trial: Trial) -> dict:
         """
+        generate parameters used by out of fold training.
 
         Args:
             trial(Trial):
+                current trial object. create parameter using it.
 
         Returns:
-
+            parameters used by train out-of-fold in optimizing
         """
         model_params = copy.deepcopy(self._initial_params)
         add_model_params = self.generate_model_class_try_params(trial)
@@ -389,8 +446,11 @@ class BaseOptunaOutOfFoldFeature(BaseOutOfFoldFeature):
 
         Args:
             trial:
+                optuna Trial Object
             X:
+                training array.
             y:
+                target array
 
         Returns:
             score of this trial
@@ -414,14 +474,14 @@ class BaseOptunaOutOfFoldFeature(BaseOutOfFoldFeature):
 
     def generate_default_model_parameter(self, X, y) -> dict:
         """
-        The main roop which explore model parameter by optuna.
+        The main loop which explore model parameter by optuna.
 
         Args:
             X:
             y:
 
         Returns:
-            best model parameter
+            tuned parameter
         """
         self.logger.info('start optimize by optuna')
 
@@ -429,9 +489,9 @@ class BaseOptunaOutOfFoldFeature(BaseOutOfFoldFeature):
         objective = lambda trial: self.get_objective(trial, X, y)
 
         # Stop model logging while optuna optimization
-        self.logger.disabled = True
-        self.study.optimize(objective, n_trials=self.n_trails, n_jobs=self.optuna_jobs)
-        self.logger.disabled = False
+        with self.exp_backend.mark_time('optuna_') as exp:
+            with self.set_silent():
+                self.study.optimize(objective, n_trials=self.n_trails, n_jobs=self.optuna_jobs)
 
         self.logger.info('best trial params: {}'.format(self.study.best_params))
         self.logger.info('best value: {}'.format(self.study.best_value))
@@ -440,52 +500,125 @@ class BaseOptunaOutOfFoldFeature(BaseOutOfFoldFeature):
         best_params.update(self.study.best_params)
         self.logger.info('best model paras: {}'.format(best_params))
 
-        if self.is_recording:
-            self.study.trials_dataframe().to_csv(os.path.join(self.output_dir, 'study_log.csv'))
-
-            with open(os.path.join(self.output_dir, 'best_params.json'), 'w') as f:
-                json.dump(best_params, f, indent=4)
-            with open(os.path.join(self.output_dir, 'best_trial_params.json'), 'w') as f:
-                json.dump(self.study.best_params, f, indent=4)
+        self.exp_backend.mark('optuna_best_value', self.study.best_value)
+        self.exp_backend.save_object('study_log', self.study.trials_dataframe())
+        self.exp_backend.save_object('best_params', best_params)
+        self.exp_backend.save_object('best_trial_params', self.study.best_params)
 
         return best_params
 
 
+class AbstractReport:
+    def call(self, feature_instance: BaseOutOfFoldFeature, source_df: pd.DataFrame, y: np.ndarray,
+             oof: np.ndarray) -> List:
+        pass
+
+
+class MetricReport(AbstractReport):
+    """calculate predict score and logging"""
+
+    def call(self, feature_instance: BaseOutOfFoldFeature, source_df: pd.DataFrame, y: np.ndarray, oof: np.ndarray):
+        if feature_instance.is_regression_model:
+            metric_df = regression_metrics(y, oof)
+        else:
+            metric_df = binary_metrics(y, oof)
+
+        feature_instance.exp_backend.mark('train_metrics', metric_df['score'])
+
+        s_metric = tabulate(metric_df.T, headers='keys')
+        for s in s_metric.split('\n'):
+            feature_instance.logger.info(s)
+
+        return [
+            ('metrics.csv', metric_df)
+        ]
+
+
+class FeatureImportanceReport(AbstractReport):
+    """plot feature importance report"""
+
+    def __init__(self, n_importance_plot=50):
+        super(FeatureImportanceReport, self).__init__()
+        self.n_importance_plot = n_importance_plot
+
+    def call(self, feature_instance: BaseOutOfFoldFeature, source_df: pd.DataFrame, y: np.ndarray,
+             oof: np.ndarray) -> List:
+
+        if not hasattr(feature_instance, '_fitted_models'): return []
+        try:
+            fig, ax, importance_df = visualize_feature_importance(feature_instance._fitted_models,
+                                                                  columns=source_df.columns,
+                                                                  top_n=self.n_importance_plot,
+                                                                  plot_type='boxen')
+            return [
+                ('feature_importance.csv', importance_df),
+                ('importance.png', fig)
+            ]
+        except NotSupportedError:
+            return []
+
+
+class CurveFigureReport(AbstractReport):
+    def __init__(self, visualizers=None):
+        super(CurveFigureReport, self).__init__()
+        if visualizers is None:
+            visualizers = [
+                visualize_pr_curve,
+                visualize_roc_auc_curve,
+                visualize_distributions
+            ]
+        self.visualizers = visualizers
+
+    def call(self, feature_instance: BaseOutOfFoldFeature, source_df: pd.DataFrame, y: np.ndarray,
+             oof: np.ndarray) -> List:
+        if feature_instance.is_regression_model:
+            return []
+
+        outputs = []
+
+        for vis in self.visualizers:
+            try:
+                fig, ax = vis(y, oof)
+                name = vis.__name__.replace('visualize_', '')
+                outputs.append(
+                    (f'{name}.png', fig)
+                )
+            except Exception as e:
+                feature_instance.logger.warning(f'Error has occurred: {vis}')
+                feature_instance.logger.warning(e)
+        return outputs
+
+
 class ShowMetricMixin:
     """show model metrics using out-of-fold prediction"""
+    n_importance_plot = 50
 
-    def after_kfold_fitting(self: Union['ShowMetricMixin', BaseOutOfFoldFeature], df_source, y, predict):
-        super(ShowMetricMixin, self).after_kfold_fitting(df_source, y, predict)
-        try:
-            self.show_metrics(y, predict)
-        except Exception as e:
-            self.logger.warn(e)
+    def get_show_metric_generators(self) -> List[AbstractReport]:
+        return [
+            MetricReport(),
+            FeatureImportanceReport(n_importance_plot=self.n_importance_plot),
+            CurveFigureReport()
+        ]
 
-    def show_metrics(self: Union['ShowMetricMixin', BaseOutOfFoldFeature], y, prob_predict):
-        if self.is_regression_model:
-            metric_df = regression_metrics(y, prob_predict)
-        else:
-            metric_df = binary_metrics(y, prob_predict)
-        self.logger.info(metric_df)
+    def post_fit(self: Union['ShowMetricMixin', BaseOutOfFoldFeature],
+                 input_df: pd.DataFrame, parent_output_df: pd.DataFrame, out_df, y):
+        for func in self.get_show_metric_generators():
+            try:
+                outputs = func.call(feature_instance=self,
+                                    source_df=parent_output_df,
+                                    y=y,
+                                    oof=out_df.values[:, 0])
 
-        if self.is_recording:
-            metric_df.to_csv(os.path.join(self.output_dir, 'metrics.csv'))
+                if not self.is_recording:
+                    continue
 
-        if not self.is_regression_model:
-            self._generate_binary_result_graph(y, prob_predict)
+                for filename, obj in outputs:
+                    self.exp_backend.save_object(filename, obj)
+            except Exception as e:
+                self.logger.warning(f'Error has occurred: {func}')
+                self.logger.warning(e)
 
-    def _generate_binary_result_graph(self: Union['ShowMetricMixin', BaseOutOfFoldFeature], y, prob_predict):
-        df_upper_acc = upper_accuracy(y, prob_predict)
-        fig = plt.figure(figsize=(6, 6))
-        ax = fig.add_subplot(111)
-        df_upper_acc.plot(x='ratio', y='accuracy', ax=ax)
-        ax.set_xlim(0, 1)
-        ax.set_ylim(min(df_upper_acc.accuracy) - .05, 1)
-        ax.set_title('Upper Accuracy')
-        fig.tight_layout()
-        fig.savefig(os.path.join(self.output_dir, 'upper_accuray.png'), dpi=150)
-        df_upper_acc.to_csv(os.path.join(self.output_dir, 'upper_accuracy.csv'), index=False)
-        plt.close(fig)
+        return super(ShowMetricMixin, self).post_fit(input_df, parent_output_df, out_df, y)
 
 
 class GenericOutOfFoldFeature(ShowMetricMixin, BaseOutOfFoldFeature):
@@ -496,15 +629,18 @@ class GenericOutOfFoldOptunaFeature(ShowMetricMixin, BaseOptunaOutOfFoldFeature)
     pass
 
 
-class EnsembleFeature(ShowMetricMixin, MergeFeature):
-    """ensemble all source features"""
-    allow_save_local = True
+class EnsembleFeature(ShowMetricMixin, AbstractFeature):
+    def __init__(self, agg='mean', **kwargs):
+        super(EnsembleFeature, self).__init__(**kwargs)
+        self.agg = agg
 
-    def call(self, df_source, y=None, test=False):
-        df = super(EnsembleFeature, self).call(df_source, y, test)
-        out_df = pd.DataFrame(df.mean(axis=1), columns=[self.name])
+    @property
+    def is_regression_model(self):
+        """proxy to parent"""
+        if isinstance(self._primary_parent, BaseOutOfFoldFeature):
+            return self._primary_parent.is_regression_model
+        return None
 
-        if y is not None:
-            self.after_kfold_fitting(df_source, y, out_df.values[:, 0])
-
-        return out_df
+    def call(self, df_source: pd.DataFrame, y=None, test=False) -> pd.DataFrame:
+        x = df_source.agg(self.agg, axis=1).values
+        return pd.DataFrame(x, columns=[f'{self.name}_{self.agg}'])

@@ -1,1 +1,2 @@
-from .linear import RidgeOutOfFold
+from .base import BaseOutOfFoldFeature, BaseOptunaOutOfFoldFeature, GenericOutOfFoldFeature, \
+    GenericOutOfFoldOptunaFeature, EnsembleFeature

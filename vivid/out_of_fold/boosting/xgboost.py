@@ -2,11 +2,12 @@ from copy import deepcopy
 
 import xgboost as xgb
 
-from .mixins import get_boosting_parameter_suggestions, BoostingOptunaFeature, BoostingOutOfFoldFeature
+from .helpers import get_boosting_parameter_suggestions
+from .mixins import BoostingOptunaFeature, BoostingOutOfFoldFeature
 
 
 class XGBoostClassifierOutOfFold(BoostingOutOfFoldFeature):
-    eval_metric = 'logloss'
+    default_eval_metric = 'logloss'
     model_class = xgb.XGBClassifier
     initial_params = {
         'learning_rate': .1,
@@ -19,7 +20,7 @@ class XGBoostClassifierOutOfFold(BoostingOutOfFoldFeature):
 
 class XGBoostRegressorOutOfFold(BoostingOutOfFoldFeature):
     model_class = xgb.XGBRegressor
-    eval_metric = 'rmse'
+    default_eval_metric = 'rmse'
     initial_params = {
         'objective': 'reg:squarederror',
         'learning_rate': .1,
@@ -34,7 +35,7 @@ class XGBoostRegressorOutOfFold(BoostingOutOfFoldFeature):
 
 class OptunaXGBRegressionOutOfFold(BoostingOptunaFeature):
     model_class = xgb.XGBRegressor
-    eval_metric = 'rmse'
+    default_eval_metric = 'rmse'
     initial_params = deepcopy(XGBoostRegressorOutOfFold.initial_params)
 
     def generate_model_class_try_params(self, trial):
@@ -45,7 +46,7 @@ class OptunaXGBRegressionOutOfFold(BoostingOptunaFeature):
 
 class OptunaXGBClassifierOutOfFold(BoostingOptunaFeature):
     model_class = xgb.XGBClassifier
-    eval_metric = 'logloss'
+    default_eval_metric = 'logloss'
     initial_params = deepcopy(XGBoostClassifierOutOfFold.initial_params)
 
     def generate_model_class_try_params(self, trial):
