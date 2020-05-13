@@ -28,16 +28,18 @@ def get_install_requires():
         'optuna',
         'xgboost',
         'lightgbm',
-        'keras',
-        'tensorflow',
-        'feather-format'
+        'feather-format',
+        'tabulate'
     ]
     return install_requires
 
 
 def get_extra_requires():
     extras = {
-        'test': ['pytest', 'pytest-cov', 'parameterized', 'ipython', 'jupyter', 'notebook', 'tornado==5.1.1', ],
+        'test': ['pytest', 'pytest-cov', 'parameterized', 'ipython', 'jupyter', 'notebook', 'tornado==5.1.1',
+                 # use skeras models
+                 'keras', 'tensorflow',
+                 'comet_ml'],
         'document': ['sphinx', 'sphinx_rtd_theme']
     }
     return extras
@@ -60,12 +62,10 @@ setup(
     classifiers=[
         'Environment :: CLI Environment',
         'Framework :: scikit-learn',
-        'Framework :: scikit-learn :: X.Y',  # replace "X.Y" as appropriate
         'Intended Audience :: Developers',
         'License :: OSI Approved :: BSD License',
         'Operating System :: OS Independent',
         'Programming Language :: Python',
-        'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
     ],
 )
