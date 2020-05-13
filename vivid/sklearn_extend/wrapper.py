@@ -92,7 +92,6 @@ class PrePostProcessModel(BaseEstimator):
                  target_scaling=None,
                  target_logscale=False,
                  output_dir=None,
-                 prepend_name=None,
                  verbose=1,
                  logger=None):
         """
@@ -122,11 +121,10 @@ class PrePostProcessModel(BaseEstimator):
         self.target_transformer = UtilityTransform(target_logscale, target_scaling)
 
         self.output_dir = output_dir
-        self.prepend_name = prepend_name
         self.verbose = verbose
 
         if logger is None:
-            self.logger = get_logger(prepend_name, Settings.LOG_LEVEL)
+            self.logger = get_logger(__name__, Settings.LOG_LEVEL)
         else:
             self.logger = logger
 
@@ -138,8 +136,7 @@ class PrePostProcessModel(BaseEstimator):
     def model_path(self):
         if not self.is_recording:
             return None
-        fname = '{0.prepend_name}_best_fitted.joblib'.format(self)
-        return os.path.join(self.output_dir, fname)
+        return os.path.join(self.output_dir, 'best_fitted.joblib')
 
     def create_model(self):
         self.logger.debug('Model Params')
@@ -157,10 +154,8 @@ class PrePostProcessModel(BaseEstimator):
         self.logger.debug('load model: {}'.format(self.model_path))
         self.fitted_model_ = joblib.load(self.model_path)
 
-        self.input_transformer = joblib.load(
-            os.path.join(self.output_dir, '{}_{}.joblib'.format(self.prepend_name, 'input')))
-        self.target_transformer = joblib.load(
-            os.path.join(self.output_dir, '{}_{}.joblib'.format(self.prepend_name, 'target')))
+        self.input_transformer = joblib.load(os.path.join(self.output_dir, 'input.joblib'))
+        self.target_transformer = joblib.load(os.path.join(self.output_dir, 'target.joblib'))
 
         return self
 
@@ -168,10 +163,8 @@ class PrePostProcessModel(BaseEstimator):
         os.makedirs(self.output_dir, exist_ok=True)
         self.logger.info('save to: {}'.format(self.model_path))
         joblib.dump(self.fitted_model_, self.model_path)
-
-        for name, scalar in zip(['input', 'target'], [self.input_transformer, self.target_transformer]):
-            fname = '{}_{}.joblib'.format(self.prepend_name, name)
-            joblib.dump(scalar, os.path.join(self.output_dir, fname))
+        joblib.dump(self.target_transformer, os.path.join(self.output_dir, 'target.joblib'))
+        joblib.dump(self.input_transformer, os.path.join(self.output_dir, 'input.joblib'))
 
     def fit(self, x_train, y_train, **kwargs):
         """
