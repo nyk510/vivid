@@ -6,10 +6,11 @@ from vivid.out_of_fold.boosting.block import create_boosting_seed_blocks
 
 
 def test_boosting_seed_block_default_prefix():
-    models = create_boosting_seed_blocks(
+    ens = create_boosting_seed_blocks(
         feature_class=boosting.XGBoostClassifierOutOfFold,
         parent=None
     )
+    models = [ens, *ens.parent]
 
     default_prefix = boosting.XGBoostClassifierOutOfFold.__class__.__name__
 
@@ -26,13 +27,14 @@ def test_invalid_n_seeds():
 
 
 def test_change_seed_number():
-    models = create_boosting_seed_blocks(
+    ens = create_boosting_seed_blocks(
         feature_class=boosting.XGBoostClassifierOutOfFold,
         add_init_params={
             'random_state': 0
         },
         n_seeds=10
     )
+    models = [ens, *ens.parent]
 
     seeds = [m._initial_params.get('random_state', None) for m in models if '_ensemble' not in m.name]
     assert len(np.unique(seeds)) == 10, seeds

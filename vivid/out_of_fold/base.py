@@ -200,7 +200,8 @@ class BaseOutOfFoldFeature(AbstractFeature):
         return oof_df
 
     def run_oof_train(self, X, y, default_params,
-                      n_fold: Union[int, None] = None) -> ([List[PrePostProcessModel], np.ndarray]):
+                      n_fold: Union[int, None] = None,
+                      silent=False) -> ([List[PrePostProcessModel], np.ndarray]):
         """
         main training loop.
 
@@ -237,7 +238,7 @@ class BaseOutOfFoldFeature(AbstractFeature):
             X_valid, y_valid = X[idx_valid], y[idx_valid]
 
             with timer(self.logger, format_str='Fold: {}/{}'.format(i + 1, self.num_cv) + ' {:.1f}[s]'):
-                output_i = None if not self.is_recording else os.path.join(self.output_dir, f'fold_{i:02d}')
+                output_i = None if not self.is_recording or silent else os.path.join(self.output_dir, f'fold_{i:02d}')
                 clf = self._fit_model(X_i, y_i,
                                       default_params=default_params,
                                       validation_set=(X_valid, y_valid),
@@ -333,8 +334,15 @@ class BaseOutOfFoldFeature(AbstractFeature):
 
     def save_model_parameters(self, best_models: List[PrePostProcessModel]) -> List[dict]:
         model_parameters = []
+        use_keys = ['model_params', 'output_dir']
         for m in best_models:
-            model_parameters.append(m.get_params(deep=False))
+            param_i = m.get_params(deep=False)
+            add_param_i = {}
+            for k in use_keys:
+                add_param_i[k] = param_i[k]
+
+            model_parameters.append(add_param_i)
+
         joblib.dump(model_parameters, self.model_param_path)
         return model_parameters
 
@@ -456,7 +464,7 @@ class BaseOptunaOutOfFoldFeature(BaseOutOfFoldFeature):
             score of this trial
         """
         params = self.generate_try_parameter(trial)
-        models, oof = self.run_oof_train(X, y, default_params=params)
+        models, oof = self.run_oof_train(X, y, default_params=params, silent=True)
 
         scores = []
         sample_weight = self.sample_weight

@@ -18,17 +18,18 @@ def convert_pandas_series_to_array(value):
         return value.to_dict()
 
 
-def convert_datetime_to_str(value):
-    if isinstance(value, date):
-        return str(value)
-
-
 def convert_pandas_index_to_array(value: pd.Index):
     if isinstance(value, pd.Index):
         return value.tolist()
 
 
+def convert_datetime_to_str(value):
+    if isinstance(value, date):
+        return str(value)
+
+
 convert_functions = [
+    convert_pandas_dataframe_to_dict,
     convert_pandas_series_to_array,
     convert_pandas_index_to_array,
     convert_datetime_to_str

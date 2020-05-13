@@ -46,7 +46,7 @@ def get_extra_requires():
 
 
 setup(
-    name='vivid',
+    name='python-vivid',
     version=get_version(),
     author='nyk510',
     packages=find_packages(),
@@ -54,17 +54,19 @@ setup(
     license='BSD License',
     description='Support Tools for Machine Learning VIVIDLY',
     long_description=README,
+    long_description_content_type='text/markdown',
     url='https://atma.co.jp/',
     author_email='yamaguchi@atma.co.jp',
     install_requires=get_install_requires(),
     tests_require=get_extra_requires()['test'],
     extras_require=get_extra_requires(),
     classifiers=[
-        'Environment :: CLI Environment',
-        'Framework :: scikit-learn',
+        'Framework :: Matplotlib',
+        'Framework :: Pytest',
         'Intended Audience :: Developers',
         'License :: OSI Approved :: BSD License',
         'Operating System :: OS Independent',
+        'Programming Language :: JavaScript',
         'Programming Language :: Python',
         'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
