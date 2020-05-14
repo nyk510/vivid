@@ -20,16 +20,16 @@ VIVID makes it easy to describe model/feature relationships. For example, you ca
 ```python
 copy_feat = CopyFeature(name='copy', root_dir='./boston_stacking')
 process_feat = BostonProcessFeature(name='boston_base', root_dir='./boston_stacking')
-concat_faet = [copy_feat, process_feat]
+concat_feat = [copy_feat, process_feat]
 
 singles = [
-    XGBoostRegressorOutOfFold(name='xgb_simple', parent=concat_faet),
-    RFRegressorFeatureOutOfFold(name='rf', parent=concat_faet),
-    KNeighborRegressorOutOfFold(name='kneighbor', parent=concat_faet),
-    OptunaXGBRegressionOutOfFold(name='xgb_optuna', n_trials=20, parent=concat_faet),
+    XGBoostRegressorOutOfFold(name='xgb_simple', parent=concat_feat),
+    RFRegressorFeatureOutOfFold(name='rf', parent=concat_feat),
+    KNeighborRegressorOutOfFold(name='kneighbor', parent=concat_feat),
+    OptunaXGBRegressionOutOfFold(name='xgb_optuna', n_trials=20, parent=concat_feat),
     # seed averaging block
-    create_boosting_seed_blocks(feature_class=XGBoostRegressorOutOfFold, prefix='xgb_', parent=concat_faet),
-    create_boosting_seed_blocks(feature_class=LGBMRegressorOutOfFold, prefix='lgbm_', parent=concat_faet),
+    create_boosting_seed_blocks(feature_class=XGBoostRegressorOutOfFold, prefix='xgb_', parent=concat_feat),
+    create_boosting_seed_blocks(feature_class=LGBMRegressorOutOfFold, prefix='lgbm_', parent=concat_feat),
 
     # only processed feature
     create_boosting_seed_blocks(feature_class=LGBMRegressorOutOfFold, prefix='only_process_lgbm_',
@@ -61,7 +61,7 @@ pip install python-vivid
 
 ## Sample Code
 
-In `/vivid/smaples`, Some sample script codes exist.
+In `/vivid/samples`, Some sample script codes exist.
 
 ## Developer
 
