@@ -5,7 +5,7 @@ from keras.callbacks import ReduceLROnPlateau
 from sklearn.utils import class_weight
 
 from vivid.out_of_fold.base import GenericOutOfFoldFeature
-from vivid.sklearn_extend.neural_network import SkerasClassifier, SkerasRegressor, ROCAucCallback
+from vivid.sklearn_extend.neural_network import SKerasClassifier, SKerasRegressor, ROCAucCallback
 
 
 class SkerasOutOfFoldMixin:
@@ -38,7 +38,7 @@ class SkerasOutOfFoldMixin:
 
 
 class SkerasClassifierOutOfFoldFeature(SkerasOutOfFoldMixin, GenericOutOfFoldFeature):
-    model_class = SkerasClassifier
+    model_class = SKerasClassifier
 
     def get_keras_callbacks(self, training_set, validation_set):
         return [
@@ -60,4 +60,4 @@ class SkerasClassifierOutOfFoldFeature(SkerasOutOfFoldMixin, GenericOutOfFoldFea
 
 
 class SkerasRegressorOutOfFoldFeature(SkerasOutOfFoldMixin, GenericOutOfFoldFeature):
-    model_class = SkerasRegressor
+    model_class = SKerasRegressor

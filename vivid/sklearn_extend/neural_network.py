@@ -1,7 +1,7 @@
 from typing import Union
 
 from keras.callbacks import Callback
-from keras.layers import Dropout, Dense, Input, BatchNormalization
+from keras.layers import Dropout, Dense, Input, BatchNormalization, ReLU
 from keras.models import Model
 from keras.optimizers import Adam
 from keras.wrappers.scikit_learn import KerasClassifier, KerasRegressor
@@ -49,23 +49,30 @@ class ROCAucCallback(Callback):
         return
 
 
-class SkerasMixin:
-    def fit(self: Union['SkerasMixin', KerasClassifier], x, y, sample_weight=None, **kwargs):
+def dense_bnn_block(input_tensor, hidden_dim, activation=ReLU, dropout_ratio=.5):
+    x = Dense(hidden_dim)(input_tensor)
+    x = BatchNormalization()(x)
+    x = activation()(x)
+    if dropout_ratio > 0:
+        x = Dropout(rate=dropout_ratio)
+    return x
+
+
+class SKerasMixin:
+    def fit(self: Union['SKerasMixin', KerasClassifier], x, y, sample_weight=None, **kwargs):
         self.sk_params['n_input'] = x.shape[1]
-        history = super(SkerasMixin, self).fit(x, y, sample_weight=sample_weight, **kwargs)
+        history = super(SKerasMixin, self).fit(x, y, sample_weight=sample_weight, **kwargs)
         self.history_ = history
         return self
 
     def bottleneck(self, input_layer):
-        x = Dense(512, activation='relu')(input_layer)
-        x = BatchNormalization()(x)
-        x = Dropout(rate=.5)(x)
-        x = Dense(512, activation='relu')(x)
-        x = BatchNormalization()(x)
-        x = Dropout(rate=.5)(x)
-        x = Dense(256, activation='relu')(x)
-        x = BatchNormalization()(x)
-        x = Dropout(rate=.5)(x)
+        hiden_dims = [
+            1024, 512, 256, 128
+        ]
+        x = input_layer
+        for hidden in hiden_dims:
+            x = dense_bnn_block(x, hidden_dim=hidden)
+
         x = Dense(128, activation='relu')(x)
         x = BatchNormalization()(x)
         feature = Dropout(rate=.2)(x)
@@ -82,7 +89,7 @@ class SkerasMixin:
         raise NotImplementedError()
 
 
-class SkerasClassifier(ClassifierMixin, SkerasMixin, KerasClassifier):
+class SKerasClassifier(ClassifierMixin, SKerasMixin, KerasClassifier):
     def __call__(self, n_input) -> Model:
         input = Input(shape=(n_input,))
         feature = self.bottleneck(input)
@@ -96,7 +103,7 @@ class SkerasClassifier(ClassifierMixin, SkerasMixin, KerasClassifier):
         return model
 
 
-class SkerasRegressor(RegressorMixin, SkerasMixin, KerasRegressor):
+class SKerasRegressor(RegressorMixin, SKerasMixin, KerasRegressor):
     def __call__(self, n_input, *args, **kwargs):
         input = Input(shape=(n_input,))
         feature = self.bottleneck(input)
