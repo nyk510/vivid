@@ -9,7 +9,7 @@ if __name__ == '__main__':
 
     X, y = load_boston(return_X_y=True)
     train_df = pd.DataFrame(X)
-    exp = LocalExperimentBackend(namespace='./simple')
+    exp = LocalExperimentBackend(namespace='./outputs/simple')
     exp.clear()
     xgb.fit(train_df, y, experiment=exp)
 

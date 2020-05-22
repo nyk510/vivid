@@ -38,7 +38,7 @@ if __name__ == '__main__':
     X, y = load_boston(return_X_y=True)
     train_df = pd.DataFrame(X)
 
-    experiment = LocalExperimentBackend(namespace='./ensemble')
+    experiment = LocalExperimentBackend(namespace='./outputs/ensemble')
 
     ensemble.fit(train_df, y, experiment=experiment)
     ensemble.predict(train_df, experiment=experiment)
