@@ -1,126 +1,106 @@
-"""Test for core.py files
-"""
-
-import os
-
 import pandas as pd
 import pytest
 
-from vivid.core import AbstractFeature
-from .conftest import SampleFeature
+from vivid.core import BaseBlock, network_hash
 
 
-class SimpleMergeFeature(AbstractFeature):
-    def call(self, df_source: pd.DataFrame, y=None, test=False) -> pd.DataFrame:
-        return df_source
+def test_network_hash():
+    a = BaseBlock('a')
+    b = BaseBlock('b')
+    assert network_hash(a) != network_hash(b)
+    assert network_hash(a) == network_hash(a)
+
+    c = BaseBlock('c', parent=[a, b])
+    hash1 = network_hash(c)
+    a._parent = [BaseBlock('z')]
+    hash2 = network_hash(c)
+    assert hash1 != hash2
 
 
-def test_merge_feature(train_data):
-    """特徴量の merge に関するテスト"""
-    train_df, y = train_data
-    feat1 = SampleFeature()
-    feat2 = SampleFeature()
-    merged = SimpleMergeFeature(name='merge', parent=[feat1, feat2])
-    pred = merged.predict(train_df)
+class CounterBlock(BaseBlock):
+    def __init__(self, **kwargs):
+        super(CounterBlock, self).__init__(**kwargs)
+        self.counter = 0
 
-    n_cols = 0
-    for feat in [feat1, feat2]:
-        p = feat.predict(train_df)
-        n_cols += p.shape[1]
-    assert pred.shape[1] == n_cols
-
-    assert pred.shape[0] == len(y)
-    assert not merged.is_recording
+    def _fit_core(self, source_df, y, experiment) -> pd.DataFrame:
+        self.counter += 1
+        return source_df.copy()
 
 
-def test_abstract_feature(output_dir):
-    abs_entrypoint = AbstractFeature(name='abs1', parent=None)
+def test_invalid_argument():
+    a = CounterBlock(name='a')
+    x = pd.Series([1, 2, 3])
 
-    model_based = AbstractFeature(name='model1', parent=abs_entrypoint)
-
-    assert abs_entrypoint.is_recording is False
-    assert model_based.is_recording is False
-    assert model_based.has_train_meta_path is False
-
-    concrete = AbstractFeature(name='concrete', root_dir=output_dir)
-    model_concrete = AbstractFeature(name='model1', root_dir=None, parent=concrete)
-
-    assert concrete.is_recording
-    assert model_concrete.is_recording
-
-    # model concrete doesn't have his own dir, so the output dir is same as parent dir
-    assert output_dir == os.path.dirname(model_concrete.output_dir)
-
-    # set root dir expressly, so this model save his own dir
-    model_overthere = AbstractFeature(name='over', root_dir=os.path.join(output_dir, 'the', 'other'),
-                                      parent=concrete)
-    assert output_dir != os.path.dirname(model_overthere.output_dir)
-
-    class NotSave(AbstractFeature):
-        allow_save_local = False
-
-    not_save = NotSave(name='not_save', parent=None, root_dir=output_dir)
-    assert not not_save.is_recording
+    with pytest.raises(ValueError):
+        a.fit(x)
 
 
-def test_save_train_and_test(train_data, output_dir):
-    train_df, y = train_data
+def test_collect_parent():
+    a = BaseBlock('a')
+    b = BaseBlock('b')
+    c = BaseBlock('c', parent=[a, b])
+    d = BaseBlock('d', parent=[c, a])
 
-    class BasicFeature(AbstractFeature):
-        count = 0
-
-        def call(self, df_source: pd.DataFrame, y=None, test=False):
-            self.count += 1
-            return pd.DataFrame(df_source.iloc[:, 0].values)
-
-    feat = BasicFeature(name='basic', parent=None, root_dir=output_dir)
-    assert feat.is_recording
-    assert feat.has_train_meta_path is False
-
-    feat.fit(train_df, y)
-    assert feat.count == 1
-    assert feat.has_train_meta_path
-
-    pred_df = feat.predict(train_df)
-    assert feat.count == 2
-    assert os.path.exists(feat.output_test_meta_path)
-
-    pred_df2 = feat.predict(train_df.tail(5))
-    assert feat.count == 2
-    assert len(pred_df2) != 5
-    assert len(pred_df2) == len(train_df)
-
-    pred_df3 = feat.predict(train_df.tail(5), recreate=True)
-    assert len(pred_df3) == 5
-    assert feat.count == 3
+    parent = d._all_parents()
+    assert sorted(parent, key=lambda x: x.name) == sorted([a, b, c, a], key=lambda x: x.name)
 
 
-@pytest.mark.parametrize('use_cache', [True, False])
-def test_features_cache(train_data, use_cache: bool, output_dir):
-    """cache を使うかどうかの選択を行えるかどうかのテスト"""
-    train_df, y = train_data
+def test_invalid_fit_core_implement(train_data):
+    class A(BaseBlock):
+        def _fit_core(self, source_df, y, experiment) -> pd.DataFrame:
+            return experiment
 
-    class BasicFeature(AbstractFeature):
-        def call(self, df_source: pd.DataFrame, y=None, test=False):
-            return pd.DataFrame(df_source.values[:, 0])
+    a = A(name='a')
+    input_df, y = train_data
 
-    from vivid.env import Settings
+    with pytest.raises(ValueError):
+        a.fit(input_df, y)
 
-    Settings.CACHE_ON_TEST = use_cache
-    Settings.CACHE_ON_TRAIN = use_cache
 
-    feat = BasicFeature(name='basic', root_dir=output_dir)
+def test_block_transform_count(train_data):
+    a = CounterBlock(name='a')
+    b = CounterBlock(name='b')
+    c = CounterBlock(name='c')
 
-    oof_df = feat.fit(train_df, y)
-    test_pred_df = feat.predict(train_df.head(10))
+    d = CounterBlock(name='d', parent=[a, b, c])
+    e = CounterBlock(name='e', parent=[a, c])
+    f = CounterBlock(name='f', parent=[a, d])
 
-    if use_cache:
-        assert feat.feat_on_train_df is not None
-        assert feat.feat_on_train_df.equals(oof_df)
+    g = CounterBlock(name='g', parent=[e, f])
 
-        assert feat.feat_on_test_df is not None
-        assert feat.feat_on_test_df.equals(test_pred_df)
+    input_df, y = train_data
+    g.fit(input_df, y)
 
-    else:
-        assert feat.feat_on_train_df is None
-        assert feat.feat_on_test_df is None
+    assert g._is_root_context, g
+    for block in [a, b, c, d, e, f]:
+        assert block.counter == 1, block
+        assert not block._is_root_context
+        assert len(block._cache.keys()) == 0
+
+    e.fit(input_df, y)
+    assert e._is_root_context, e
+
+
+def test_re_fit():
+    input_df1 = pd.DataFrame({'a': [1, 2, 3]})
+    input_df2 = pd.DataFrame({'a': [1, 2, 2]})
+
+    class Count(BaseBlock):
+        def _fit_core(self, source_df: pd.DataFrame, y, experiment) -> pd.DataFrame:
+            self.vc = source_df['a'].value_counts().to_dict()
+            return self.transform(source_df)
+
+        def transform(self, source_df):
+            x = source_df['a'].map(self.vc)
+            out_df = pd.DataFrame()
+            out_df['a_count'] = x.values
+            return out_df
+
+    a = Count('a')
+    a.fit(input_df1)
+
+    y_trans = a.predict(input_df1)
+
+    a.fit(input_df2)
+    y_trans2 = a.predict(input_df2)
+    assert not y_trans.equals(y_trans2)
