@@ -1,8 +1,9 @@
 from copy import deepcopy
 from typing import Union
 
-from .helpers import logging_evaluation
-from ..base import BaseOutOfFoldFeature, GenericOutOfFoldFeature, GenericOutOfFoldOptunaFeature
+from vivid.backends import ExperimentBackend
+from .helpers import LogEvaluationCallback
+from ..base import MetaBlock, TunerBlock
 
 
 class BoostingEarlyStoppingMixin:
@@ -11,10 +12,12 @@ class BoostingEarlyStoppingMixin:
     default_eval_metric = None
     fit_verbose = 100
 
-    def get_fit_params_on_each_fold(self: Union['BoostingEarlyStoppingMixin', BaseOutOfFoldFeature],
-                                    model_params, training_set, validation_set, indexes_set):
+    def get_fit_params_on_each_fold(self: Union['BoostingEarlyStoppingMixin', MetaBlock],
+                                    model_params, training_set, validation_set, indexes_set,
+                                    experiment: ExperimentBackend):
         params = super(BoostingEarlyStoppingMixin, self) \
-            .get_fit_params_on_each_fold(model_params, training_set, validation_set, indexes_set)
+            .get_fit_params_on_each_fold(model_params, training_set, validation_set, indexes_set, experiment)
+
         model_params = deepcopy(model_params)
         eval_metric = model_params.pop('eval_metric', self.default_eval_metric)
         add_params = dict(
@@ -24,16 +27,17 @@ class BoostingEarlyStoppingMixin:
             verbose=0,  # stop default_loader console log
             callbacks=[
                 # write GBDT logging to the output log file
-                logging_evaluation(logger=self.logger, period=self.fit_verbose)
+                LogEvaluationCallback(logger=experiment.logger,
+                                      period=self.fit_verbose, )
             ]
         )
         params.update(add_params)
         return params
 
 
-class BoostingOutOfFoldFeature(BoostingEarlyStoppingMixin, GenericOutOfFoldFeature):
+class BaseBoostingBlock(BoostingEarlyStoppingMixin, MetaBlock):
     pass
 
 
-class BoostingOptunaFeature(BoostingEarlyStoppingMixin, GenericOutOfFoldOptunaFeature):
+class TunedBoostingBlock(BoostingEarlyStoppingMixin, TunerBlock):
     pass

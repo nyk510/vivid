@@ -2,28 +2,39 @@ from lightgbm.callback import _format_eval_result, CallbackEnv
 from optuna import Trial
 
 
-def logging_evaluation(logger, period=1, show_stdv=True, experiment_backend=None):
-    """
-    create logging callback function
+class LogEvaluationCallback(object):
+    def __init__(self, logger, period=1, show_stdv=True):
+        self.logger = logger
+        self.period = period
+        self.show_stdv = show_stdv
 
-    :param logger:
-    :param period:
-    :param show_stdv:
-    :return:
-        function
-    """
+    def __call__(self, env: CallbackEnv, *args, **kwargs):
+        """
+        print or logging out current learning status
 
-    def _callback(env: CallbackEnv):
-        if period > 0 and env.evaluation_result_list and (env.iteration + 1) % period == 0:
-            try:
-                result = '\t'.join([_format_eval_result(x, show_stdv) for x in env.evaluation_result_list])
-            except ValueError:
-                scores = [f'{key} {score}' for key, score in env.evaluation_result_list]
-                result = '\t'.join(scores)
-            logger.info('[%d]\t%s' % (env.iteration + 1, result))
+        Args:
+            env:
+            *args:
+            **kwargs:
 
-    _callback.order = 10
-    return _callback
+        Returns:
+            None
+        """
+        if self.period <= 0:
+            return
+
+        if not env.evaluation_result_list:
+            return
+
+        if (env.iteration + 1) % self.period != 0:
+            return
+
+        try:
+            result = '\t'.join([_format_eval_result(x, self.show_stdv) for x in env.evaluation_result_list])
+        except ValueError:
+            scores = [f'{key} {score}' for key, score in env.evaluation_result_list]
+            result = '\t'.join(scores)
+        self.logger.info('[%d]\t%s' % (env.iteration + 1, result))
 
 
 def get_boosting_parameter_suggestions(trial: Trial) -> dict:

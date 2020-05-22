@@ -1,33 +1,33 @@
 from copy import deepcopy
 from typing import Type, Union, List
 
-from vivid.core import AbstractFeature
-from vivid.out_of_fold.base import BaseOutOfFoldFeature, EnsembleFeature
+from vivid.core import BaseBlock
+from vivid.estimators.base import MetaBlock, EnsembleBlock
 
 
-def create_boosting_seed_blocks(feature_class: Type[BaseOutOfFoldFeature],
-                                parent: Union[None, AbstractFeature, List[AbstractFeature]] = None,
+def create_boosting_seed_blocks(feature_class: Type[MetaBlock],
+                                parent: Union[None, BaseBlock, List[BaseBlock]] = None,
                                 prefix: str = None,
                                 add_init_params=None,
-                                n_seeds=5,) -> EnsembleFeature:
+                                n_seeds=5, ) -> EnsembleBlock:
     """
     Boosting Algorithm の seed averaging block を作成する関数.
     feature_class のパラメータに add_init_params & random_state が変わった single model * n_seeds
     + それらのアンサンブル の合計 n_seeds + 1 の配列の特徴量を返す
 
     Args:
-        feature_class(BaseOutOfFoldFeature):
+        feature_class(MetaBlock):
             out of fold feature を継承した, boosting feature.
             boosting 以外では意味をなさないことに注意して下さい.
             (random_state によって seed が代わりそれを averaging することに意味があるアルゴリズムのみが対象です.)
-        parent(AbstractFeature):
+        parent(BaseBlock):
         prefix(str):
         add_init_params(dict): update init params each averaging feature.
         n_seeds(int): number of averaging feature. must be over zero.
 
     Returns(List[AbstractFeature]):
     """
-    if issubclass(type(feature_class), AbstractFeature):
+    if issubclass(type(feature_class), BaseBlock):
         raise ValueError(f'invalid `feature_class` argument. `feature_class` must be AbstractFeature subclass.')
     if n_seeds < 0:
         raise ValueError(f'Invalid `n_seeds`. Must be over zero.')
@@ -42,6 +42,6 @@ def create_boosting_seed_blocks(feature_class: Type[BaseOutOfFoldFeature],
 
         feats.append(feature_class(name=f'{prefix}_{seed_id:02d}', parent=parent, add_init_param=add_param))
 
-    ensemble_feat = EnsembleFeature(parent=feats[:], name=f'{prefix}_ensemble')
+    ensemble_feat = EnsembleBlock(parent=feats[:], name=f'{prefix}_ensemble')
 
     return ensemble_feat

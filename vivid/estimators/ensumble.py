@@ -1,9 +1,9 @@
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 
-from .base import GenericOutOfFoldFeature
+from .base import MetaBlock
 
 
-class RFClassifierFeatureOutOfFold(GenericOutOfFoldFeature):
+class RFClassifierBlock(MetaBlock):
     model_class = RandomForestClassifier
     initial_params = {
         'criterion': 'gini',
@@ -11,7 +11,7 @@ class RFClassifierFeatureOutOfFold(GenericOutOfFoldFeature):
     }
 
 
-class RFRegressorFeatureOutOfFold(GenericOutOfFoldFeature):
+class RFRegressorBlock(MetaBlock):
     model_class = RandomForestRegressor
     initial_params = {
         'criterion': 'mse',

@@ -1,9 +1,9 @@
 from sklearn.linear_model import LogisticRegression, Ridge
 
-from .base import GenericOutOfFoldOptunaFeature
+from .base import TunerBlock
 
 
-class LogisticOutOfFold(GenericOutOfFoldOptunaFeature):
+class TunedLogisticBlock(TunerBlock):
     initial_params = {
         'solver': 'liblinear',
         'penalty': 'l2',
@@ -18,7 +18,7 @@ class LogisticOutOfFold(GenericOutOfFoldOptunaFeature):
         }
 
 
-class RidgeOutOfFold(GenericOutOfFoldOptunaFeature):
+class TunedRidgeBlock(TunerBlock):
     model_class = Ridge
 
     def generate_model_class_try_params(self, trial):

@@ -5,24 +5,24 @@
 from optuna.trial import Trial
 from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
 
-from .base import GenericOutOfFoldFeature, GenericOutOfFoldOptunaFeature
+from .base import GenericMetaBlock, GenericTunerBlock
 
 
-class KNeighborClassifierOOF(GenericOutOfFoldFeature):
+class KNNClassifierBlock(GenericMetaBlock):
     model_class = KNeighborsClassifier
     initial_params = {
         'n_neighbors': 5
     }
 
 
-class KNeighborRegressorOutOfFold(GenericOutOfFoldFeature):
+class KNNRegressorBlock(GenericMetaBlock):
     model_class = KNeighborsRegressor
     initial_params = {
         'n_neighbors': 5
     }
 
 
-class OptunaKNeighborRegressorOutOfFold(GenericOutOfFoldOptunaFeature):
+class TunedKNNRegressorBlock(GenericTunerBlock):
     model_class = KNeighborsRegressor
 
     def generate_model_class_try_params(self, trial: Trial):

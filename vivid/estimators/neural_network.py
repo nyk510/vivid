@@ -4,11 +4,11 @@ import numpy as np
 from keras.callbacks import ReduceLROnPlateau
 from sklearn.utils import class_weight
 
-from vivid.out_of_fold.base import GenericOutOfFoldFeature
+from vivid.estimators.base import MetaBlock
 from vivid.sklearn_extend.neural_network import SKerasClassifier, SKerasRegressor, ROCAucCallback
 
 
-class SkerasOutOfFoldMixin:
+class BaseSkerasBlock(MetaBlock):
     initial_params = {
         'input_scaling': True,
         'epochs': 30,
@@ -21,12 +21,18 @@ class SkerasOutOfFoldMixin:
             ReduceLROnPlateau(patience=5, verbose=1)
         ]
 
-    def get_fit_params_on_each_fold(self, model_params: dict,
+    def get_fit_params_on_each_fold(self,
+                                    model_params: dict,
                                     training_set: Tuple[np.ndarray, np.ndarray],
                                     validation_set: Tuple[np.ndarray, np.ndarray],
-                                    indexes_set: Tuple[np.ndarray, np.ndarray]) -> dict:
-        params = super() \
-            .get_fit_params_on_each_fold(model_params, training_set, validation_set, indexes_set)
+                                    indexes_set: Tuple[np.ndarray, np.ndarray],
+                                    experiment) -> dict:
+        params = super(BaseSkerasBlock, self).get_fit_params_on_each_fold(
+            model_params=model_params,
+            training_set=training_set,
+            validation_set=validation_set,
+            indexes_set=indexes_set,
+            experiment=experiment)
 
         add_params = {
             'callbacks': self.get_keras_callbacks(training_set, validation_set),
@@ -37,20 +43,22 @@ class SkerasOutOfFoldMixin:
         return params
 
 
-class SkerasClassifierOutOfFoldFeature(SkerasOutOfFoldMixin, GenericOutOfFoldFeature):
+class KerasClassifierBlock(BaseSkerasBlock):
     model_class = SKerasClassifier
 
     def get_keras_callbacks(self, training_set, validation_set):
         return [
-            *super(SkerasClassifierOutOfFoldFeature, self).get_keras_callbacks(training_set, validation_set),
+            *super(KerasClassifierBlock, self).get_keras_callbacks(training_set, validation_set),
             ROCAucCallback(training_data=training_set, validation_data=validation_set),
         ]
 
-    def get_fit_params_on_each_fold(self, model_params: dict,
+    def get_fit_params_on_each_fold(self,
+                                    model_params: dict,
                                     training_set: Tuple[np.ndarray, np.ndarray],
                                     validation_set: Tuple[np.ndarray, np.ndarray],
-                                    indexes_set: Tuple[np.ndarray, np.ndarray]) -> dict:
-        params = super(SkerasClassifierOutOfFoldFeature, self) \
+                                    indexes_set: Tuple[np.ndarray, np.ndarray],
+                                    experiment) -> dict:
+        params = super(KerasClassifierBlock, self) \
             .get_fit_params_on_each_fold(model_params, training_set, validation_set, indexes_set)
 
         y = training_set[1]
@@ -59,5 +67,5 @@ class SkerasClassifierOutOfFoldFeature(SkerasOutOfFoldMixin, GenericOutOfFoldFea
         return params
 
 
-class SkerasRegressorOutOfFoldFeature(SkerasOutOfFoldMixin, GenericOutOfFoldFeature):
+class KerasRegressorBlock(BaseSkerasBlock):
     model_class = SKerasRegressor
