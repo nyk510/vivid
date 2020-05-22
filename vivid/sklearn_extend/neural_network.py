@@ -17,16 +17,7 @@ class ROCAucCallback(Callback):
         self.x_val = validation_data[0]
         self.y_val = validation_data[1]
 
-    def on_train_begin(self, logs={}):
-        return
-
-    def on_train_end(self, logs={}):
-        return
-
-    def on_epoch_begin(self, epoch, logs={}):
-        return
-
-    def on_epoch_end(self, epoch, logs={}):
+    def on_epoch_end(self, epoch, logs=None):
         y_pred = self.model.predict(self.x, verbose=0)
         roc = roc_auc_score(self.y, y_pred)
         logs['roc_auc'] = roc_auc_score(self.y, y_pred)
@@ -42,10 +33,10 @@ class ROCAucCallback(Callback):
               end=10 * ' ' + '\n')
         return
 
-    def on_batch_begin(self, batch, logs={}):
+    def on_batch_begin(self, batch, logs=None):
         return
 
-    def on_batch_end(self, batch, logs={}):
+    def on_batch_end(self, batch, logs=None):
         return
 
 
@@ -65,11 +56,11 @@ class SKerasMixin:
         self.history_ = history
         return self
 
-    def bottleneck(self, input_layer):
+    def bottleneck(self, input_tensor):
         hiden_dims = [
             1024, 512, 256, 128
         ]
-        x = input_layer
+        x = input_tensor
         for hidden in hiden_dims:
             x = dense_bnn_block(x, hidden_dim=hidden)
 
