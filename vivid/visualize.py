@@ -1,6 +1,6 @@
 """visualization tools
 """
-from typing import Union, List, Callable
+from typing import Union, List, Callable, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -169,7 +169,7 @@ def visualize_feature_importance(models,
                                  ax: Union[None, plt.Axes] = None,
                                  top_n: Union[None, int] = None,
                                  feature_extractor: Union[None, Callable[[BaseEstimator], np.ndarray]] = None,
-                                 **plot_kwgs):
+                                 **plot_kwgs) -> Tuple[plt.Figure, plt.Axes, pd.DataFrame]:
     """
     plot feature importance from a learned Model
 
