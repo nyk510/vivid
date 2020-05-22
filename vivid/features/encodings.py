@@ -5,8 +5,6 @@ from typing import Union
 import numpy as np
 import pandas as pd
 
-from .atoms import AbstractAtom
-
 
 class OneHotEncodingAtom(AbstractAtom):
     """use_columns に対して One Hot Encoding を実行する"""
