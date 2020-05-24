@@ -9,17 +9,18 @@ from sklearn.base import TransformerMixin, BaseEstimator, clone
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.utils.validation import check_is_fitted
 
-from ..env import Settings
 from ..utils import get_logger
 
-__author__ = "nyk510"
+logger = get_logger(__name__)
+
+scaler = {
+    True: StandardScaler(),
+    'standard': StandardScaler(),
+    'minmax': MinMaxScaler()
+}
 
 
-def get_scalar_by_name(name):
-    scaler = {
-        'standard': StandardScaler(),
-        'minmax': MinMaxScaler()
-    }
+def get_scalar_by_name(name) -> Union[None, StandardScaler]:
     return scaler.get(name, None)
 
 
@@ -39,9 +40,8 @@ class UtilityTransform(TransformerMixin, BaseEstimator):
     def fit(self, X, y=None):
         self.scalar_ = get_scalar_by_name(self.scaling)
         if self.scaling is not None and self.scalar_ is None:
-            raise ValueError('')
-
-        self.scalar_ = get_scalar_by_name(self.scaling)
+            raise ValueError('{} is not a valid scaling name. Must be one of the following name '.format(self.scaling) \
+                             + ', '.join(map(str, scaler.keys())))
         if self.log and np.sum(X < 0) > 0:
             raise ValueError('In Log-scalar, you must input value over zero')
 
@@ -49,14 +49,18 @@ class UtilityTransform(TransformerMixin, BaseEstimator):
         if self.log:
             X = np.log1p(X + self.threshold)
 
-        if self.scalar_:
+        if self.scalar_ is not None:
+            logger.debug('fit scaling {}'.format(self.scalar_))
             if self.is_one_dim_:
                 X = X.reshape(-1, 1)
-            X = self.scalar_.fit_transform(X)
+            self.scalar_ = self.scalar_.fit(X, y=y)
         return self
 
     def transform(self, X):
         check_is_fitted(self, 'is_one_dim_')
+        if self.scalar_:
+            check_is_fitted(self.scalar_)
+
         if self.log:
             X = np.log1p(X + self.threshold)
 
@@ -84,8 +88,9 @@ class UtilityTransform(TransformerMixin, BaseEstimator):
 
 
 class PrePostProcessModel(BaseEstimator):
-    """
-    モデルの保存と入出力の正規化を行う機能を加えた scikit-learn estimator
+    """Custom Scikit-Learn Estimator
+
+    [note] this class should be replaced by pileline class. (future work)
     """
 
     def __init__(self,
@@ -93,21 +98,21 @@ class PrePostProcessModel(BaseEstimator):
                  input_scaling=None,
                  input_logscale=False,
                  target_scaling=None,
-                 target_logscale=False,
-                 verbose=1):
+                 target_logscale=False):
         """
 
+
         Args:
-            model_class:
-                学習させるモデルの class.
-                model_class.fit を実装していること及び pickle で保存できる必要があります
-            model_params(dict | None): モデルのパラメータ
-            output_dir(str): モデルを保存するディレクトリのパス
-            prepend_name(str): 最適なモデルを保存するときの prefix
-            use_scaling(bool):
-            num_cv_in_search:
-            scoring(str): 探索時に使用する metrics
-            logger:
+            instance:
+                main model instance.
+            input_scaling:
+                scaling name apply to feature `X` before input to instance
+            input_logscale:
+                set True, feature `X` convert to logscale
+            target_scaling:
+                scaling name apply to target `y` before instance
+            target_logscale:
+                set True, target `y` convert to logscale
         """
 
         self.input_scaling = input_logscale
@@ -117,8 +122,6 @@ class PrePostProcessModel(BaseEstimator):
 
         self.input_transformer = UtilityTransform(input_logscale, input_scaling)
         self.target_transformer = UtilityTransform(target_logscale, target_scaling)
-        self.verbose = verbose
-        self.logger = get_logger(__name__, Settings.LOG_LEVEL)
         self.instance = instance
         super(PrePostProcessModel, self).__init__()
 
@@ -136,13 +139,29 @@ class PrePostProcessModel(BaseEstimator):
             try:
                 pred = self.fitted_model_.predict_proba(x)
             except AttributeError as e:
-                self.logger.warning(e)
+                logger.warning(e)
                 pred = self.fitted_model_.predict(x)
         else:
             pred = self.fitted_model_.predict(x)
 
         pred = self.target_transformer.inverse_transform(pred)
         return pred
+
+    def get_params(self, deep=True):
+        params = super(PrePostProcessModel, self).get_params(deep=False)
+
+        if not deep:
+            return params
+
+        params.update({
+            'instance': {
+                'class': str(type(self.instance)),
+                'params': self.instance.get_params(deep=True),
+            },
+            'input_transformer': self.input_transformer.get_params(deep=True),
+            'target_transformer': self.target_transformer.get_params(deep=True)
+        })
+        return params
 
     def _before_fit(self, x_train, y_train):
         x = self.input_transformer.fit_transform(x_train)
