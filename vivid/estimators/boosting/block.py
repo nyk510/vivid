@@ -9,7 +9,8 @@ def create_boosting_seed_blocks(feature_class: Type[MetaBlock],
                                 parent: Union[None, BaseBlock, List[BaseBlock]] = None,
                                 prefix: str = None,
                                 add_init_params=None,
-                                n_seeds=5, ) -> EnsembleBlock:
+                                n_seeds=5,
+                                init_params=None) -> EnsembleBlock:
     """
     Boosting Algorithm の seed averaging block を作成する関数.
     feature_class のパラメータに add_init_params & random_state が変わった single model * n_seeds
@@ -36,11 +37,14 @@ def create_boosting_seed_blocks(feature_class: Type[MetaBlock],
     feats = []
     for seed_id in range(n_seeds):
         add_param = deepcopy(add_init_params)
-        if add_param is None:
-            add_param = {}
+        if add_param is None: add_param = {}
+        if init_params is None: init_params = {}
         add_param['random_state'] = seed_id
 
-        feats.append(feature_class(name=f'{prefix}_{seed_id:02d}', parent=parent, add_init_param=add_param))
+        feats.append(feature_class(name=f'{prefix}_seed={seed_id:02d}',
+                                   parent=parent,
+                                   add_init_param=add_param,
+                                   **init_params))
 
     ensemble_feat = EnsembleBlock(parent=feats[:], name=f'{prefix}_ensemble')
 
