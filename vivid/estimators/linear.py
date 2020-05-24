@@ -4,13 +4,12 @@ from .base import TunerBlock
 
 
 class TunedLogisticBlock(TunerBlock):
+    model_class = LogisticRegression
     initial_params = {
         'solver': 'liblinear',
         'penalty': 'l2',
         'input_scaling': 'standard',
-        'n_jobs': 1,
     }
-    model_class = LogisticRegression
 
     def generate_model_class_try_params(self, trial):
         return {
@@ -20,6 +19,9 @@ class TunedLogisticBlock(TunerBlock):
 
 class TunedRidgeBlock(TunerBlock):
     model_class = Ridge
+    initial_params = {
+        'input_scaling': 'standard'
+    }
 
     def generate_model_class_try_params(self, trial):
         return {
