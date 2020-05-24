@@ -188,17 +188,18 @@ def visualize_feature_importance(models,
         columns:
             List of names of feature
         plot_type:
+            importance plot style. if set as "bar", call seaborn.barplot and "boxend" calls seaborn.boxen plot.
             `"bar"` or `"boxen"`.
         top_n:
             When int is specified, plot the top n items
         ax:
-            matplotlib plt.Axes obj. Create a new fig, ax if none
+            matplotlib plt.Axes obj. Create a new fig, ax is none.
         feature_extractor:
             It is an argument for plotting a feature for an unsupported model.
             If set, the feature-grabbing method is overridden.
             Must be a function that takes model as an argument and returns a np array.
         **plot_kwgs:
-            plot extra kwrgs. pass to seaborn.plot function.
+            plot extra kwrgs. pass to seaborn.boxenplot or barplot function.
 
     Returns:
         ax is None, return fig, ax, feature importance df
@@ -255,7 +256,6 @@ def visualize_feature_importance(models,
         raise ValueError('plot_type must be in boxen or bar. Actually, {}'.format(plot_type))
     ax.tick_params(axis='x', rotation=90)
 
-    if fig is None:
-        return ax, importance_df
-    fig.tight_layout()
+    if fig:
+        fig.tight_layout()
     return fig, ax, importance_df
