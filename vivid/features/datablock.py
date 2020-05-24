@@ -4,31 +4,28 @@ from typing import Tuple, Union
 import pandas as pd
 
 from vivid.core import BaseBlock
-from vivid.env import Settings
 
 
 class DataBlock(BaseBlock):
-    def __init__(self, name):
+    def __init__(self, name: str):
         super(DataBlock, self).__init__(name=name, parent=None)
 
-    def transform(self, source_df):
+    def transform(self, source_df: pd.DataFrame) -> pd.DataFrame:
         raise NotImplementedError()
 
 
 class CSVBlock(DataBlock):
-    def __init__(self, path_to_csv: str, cache_dir=None):
+    def __init__(self, path_to_csv: str):
         self.path_to_csv = path_to_csv
-        if cache_dir is None:
-            cache_dir = Settings.CACHE_DIR
         super(CSVBlock, self).__init__(name=os.path.basename(path_to_csv))
 
-    def transform(self, source_df):
+    def transform(self, source_df: pd.DataFrame) -> pd.DataFrame:
         return pd.read_csv(self.path_to_csv)
 
 
 class RelationBlock(BaseBlock):
     def __init__(self,
-                 name,
+                 name: str,
                  key: Union[str, Tuple[str, str]],
                  parent_from: BaseBlock,
                  parent_to: BaseBlock):
@@ -52,7 +49,7 @@ class RelationBlock(BaseBlock):
 
         self.keys = keys
 
-    def transform(self, source_df):
+    def transform(self, source_df: pd.DataFrame) -> pd.DataFrame:
         cols = source_df.columns  # type: pd.Index
 
         from_col_idx = cols.str.startswith(self.parent_from.name)

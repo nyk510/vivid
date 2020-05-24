@@ -1,12 +1,12 @@
 from collections import OrderedDict
-from typing import Type, List
-from typing import Union
+from typing import Type, List, Union
 
 import numpy as np
 import pandas as pd
+from sklearn.base import BaseEstimator, TransformerMixin
 
 
-class OneHotEncodingAtom(AbstractAtom):
+class OneHotEncodingAtom(TransformerMixin, BaseEstimator):
     """use_columns に対して One Hot Encoding を実行する"""
 
     def __init__(self,
@@ -55,7 +55,7 @@ class OneHotEncodingAtom(AbstractAtom):
         return out_df
 
 
-class CountEncodingAtom(AbstractAtom):
+class CountEncodingAtom(TransformerMixin, BaseEstimator):
     """Training Data を master set とみなしCount Encoding を実行する"""
 
     def __init__(self):
@@ -80,7 +80,7 @@ class CountEncodingAtom(AbstractAtom):
         return out_df.add_prefix('count_')
 
 
-class InnerMergeAtom(AbstractAtom):
+class InnerMergeAtom(TransformerMixin, BaseEstimator):
     """
     特定のカラムでの groupby 集計でカラムの値をその他のカラムの集計値に変換する
     """
