@@ -8,6 +8,7 @@ from sklearn.datasets import load_boston
 
 from vivid.env import Settings
 from vivid.fixture import cacheable, CacheFunctionFactory
+from vivid.setup import setup_project
 
 
 class CountLoader:
@@ -21,11 +22,13 @@ class CountLoader:
 
 
 @pytest.fixture(autouse=True)
-def clean_cache():
-    if os.path.exists(Settings.CACHE_DIR):
-        shutil.rmtree(Settings.CACHE_DIR)
+def cache_dir(tmpdir):
+    root = tmpdir
+    Settings.PROJECT_ROOT = tmpdir
+    if os.path.exists(root):
+        shutil.rmtree(root)
     CacheFunctionFactory.wrappers = {}
-    yield
+    return setup_project(root).cache
 
 
 @pytest.fixture(scope='function')
@@ -34,7 +37,6 @@ def boston_count_loader():
 
 
 @pytest.mark.parametrize('inputs,expect', [
-    (('foo', None, None), os.path.join(Settings.CACHE_DIR, 'foo.joblib')),
     (('foo', '/analysis/data', 'hoge'), '/analysis/data/foo.hoge'),
 ])
 def test_get_cache_dir(inputs, expect):
@@ -43,8 +45,7 @@ def test_get_cache_dir(inputs, expect):
     assert _get_cache_dir(*inputs) == expect
 
 
-@pytest.mark.usefixtures('clean_cache')
-def test_fixture_cache(boston_count_loader):
+def test_fixture_cache(boston_count_loader, cache_dir):
     @cacheable
     def boston():
         return boston_count_loader()
@@ -55,7 +56,7 @@ def test_fixture_cache(boston_count_loader):
 
     assert boston_count_loader.counter == 1
     # by default, save to env.Settings.CACHE_DIR
-    assert os.path.exists(os.path.join(Settings.CACHE_DIR, 'boston.joblib'))
+    assert os.path.exists(os.path.join(cache_dir, 'boston.joblib'))
 
     X2, y2 = boston()
     assert isinstance(X2, np.ndarray)
@@ -66,7 +67,7 @@ def test_fixture_cache(boston_count_loader):
 
     assert 'boston' in CacheFunctionFactory.list_keys()
 
-    shutil.rmtree(Settings.CACHE_DIR)
+    shutil.rmtree(cache_dir)
 
     boston()
     assert boston_count_loader.counter == 2
@@ -78,17 +79,16 @@ def test_fixture_cache(boston_count_loader):
     assert boston_count_loader.counter == 3
 
 
-@pytest.mark.usefixtures('clean_cache')
-def test_register_as_custom_name(boston_count_loader):
+def test_register_as_custom_name(boston_count_loader, cache_dir):
     @cacheable(callable_or_scope='other_boston')
     def boston():
         return boston_count_loader()
 
     X, y = boston()
-    assert os.path.exists(os.path.join(Settings.CACHE_DIR, 'other_boston.joblib'))
+    assert os.path.exists(os.path.join(cache_dir, 'other_boston.joblib'))
 
 
-@pytest.mark.usefixtures('clean_cache')
+@pytest.mark.usefixtures('cache_dir')
 @pytest.mark.parametrize('output', [
     pd.DataFrame([1, 2, 3, 2]),
     np.random.uniform(size=(100, 100)),
