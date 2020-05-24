@@ -1,8 +1,6 @@
 import copy
-from typing import List, Tuple, Optional
-from typing import Union, Callable
+from typing import List, Tuple, Optional, Union, Callable
 
-import matplotlib.pyplot as plt
 import numpy as np
 import optuna
 import pandas as pd
@@ -12,16 +10,15 @@ from sklearn.base import is_regressor
 from sklearn.exceptions import NotFittedError
 from sklearn.metrics import check_scoring
 from sklearn.metrics._scorer import _BaseScorer, SCORERS
+from sklearn.model_selection import check_cv
 from tabulate import tabulate
 
 from vivid.backends.experiments import ExperimentBackend
-from vivid.core import AbstractEvaluation, EvaluationEnv
-from vivid.core import BaseBlock, SimpleEvaluation
+from vivid.core import AbstractEvaluation, EvaluationEnv, BaseBlock, SimpleEvaluation
 from vivid.metrics import regression_metrics, binary_metrics
 from vivid.sklearn_extend import PrePostProcessModel
 from vivid.visualize import NotSupportedError, visualize_feature_importance, visualize_distributions, \
-    visualize_pr_curve, \
-    visualize_roc_auc_curve
+    visualize_pr_curve, visualize_roc_auc_curve
 
 
 class MetricReport(AbstractEvaluation):
@@ -39,23 +36,24 @@ class MetricReport(AbstractEvaluation):
         if not env.block.is_estimator:
             return
 
-        if not isinstance(env.block, MetaBlock):
+        if not hasattr(env.block, 'is_regression_model'):
             return
 
         y = env.y
         oof = env.output_df.values[:, 0]
         experiment = env.experiment
-        if env.block.is_regression_model:
-            metric_df = regression_metrics(y, oof)
-        else:
-            metric_df = binary_metrics(y, oof)
 
-        experiment.mark('train_metrics', metric_df['score'])
+        if env.block.is_regression_model:
+            score = regression_metrics(y, oof)
+        else:
+            score = binary_metrics(y, oof)
+        experiment.mark('train_metrics', score)
 
         if not self.show_to_log:
             return
-        s_metric = tabulate(metric_df.T, headers='keys')
-        experiment.logger.info(s_metric)
+        s_metric = tabulate([score], headers='keys', tablefmt='github')
+        for l in s_metric.split('\n'):
+            experiment.logger.info(l)
 
 
 class FeatureImportanceReport(AbstractEvaluation):
@@ -70,13 +68,13 @@ class FeatureImportanceReport(AbstractEvaluation):
             return
 
         try:
-            env.experiment.logger.info('start plot importance')
+            env.experiment.logger.debug('start plot importance')
             fig, ax, importance_df = visualize_feature_importance(env.block._fitted_models,
                                                                   columns=env.parent_df.columns,
                                                                   top_n=self.n_importance_plot,
                                                                   plot_type='boxen')
         except NotSupportedError:
-            env.experiment.logger.warning(f'class {env.block.model_class} is not supported for feature importance.')
+            env.experiment.logger.debug(f'class {env.block.model_class} is not supported for feature importance.')
             return
 
         env.experiment.save_figure('importance', fig)
@@ -104,9 +102,6 @@ def curve_figure_block():
     return [CurveFigureReport(v, name=v.__name__.replace('visualize_', '')) for v in visualizers]
 
 
-from sklearn.model_selection import check_cv
-
-
 class EstimatorMixin:
     is_estimator = True
 
@@ -119,6 +114,7 @@ class MetaBlock(EstimatorMixin, BaseBlock):
     The parameters used for learning are determined by the class variable `initial_params`.
     If you want to use a different variable for each instance, pass the parameter you want to add to `add_init_param`.
     """
+    is_estimator = True
     initial_params = {}
     model_class = None
 
@@ -138,8 +134,6 @@ class MetaBlock(EstimatorMixin, BaseBlock):
                 sample weight. shape = (n_train,)
             add_init_param:
                 additional init params. class attribute `init_params` are updated by it.
-            root_dir:
-                root_dir, pass to `AbstractFeature`.
         """
 
         self.cv = cv
@@ -159,13 +153,33 @@ class MetaBlock(EstimatorMixin, BaseBlock):
 
         super(MetaBlock, self).__init__(name, parent, evaluations=evaluations)
 
+    def _to_hash(self) -> str:
+        s = super(MetaBlock, self)._to_hash()
+        parameters = {}
+        parameters.update(self._initial_params)
+        parameters.update({
+            'cv': str(self.cv),
+            'group': self.groups.shape if self.groups else None,
+            'sample_weight': self.sample_weight.shape if self.sample_weight else None
+        })
+        for k, v in parameters.items():
+            s += '{}\t{}'.format(k, v)
+        return s
+
     @property
     def is_regression_model(self):
         """whether the `model_class` instance is regression model or Not"""
         return is_regressor(self.model_class())
 
-    def check_is_ready_to_predict(self):
-        return hasattr(self, '_fitted_models')
+    def check_is_fitted(self, experiment: ExperimentBackend):
+        if hasattr(self, '_fitted_models'):
+            return True
+
+        try:
+            output_dirs = experiment.get_marked().get('cv_dirs', None)
+        except (FileNotFoundError, AttributeError):
+            return False
+        return output_dirs is not None
 
     def clear_fit_cache(self):
         del self._fitted_models
@@ -272,7 +286,7 @@ class MetaBlock(EstimatorMixin, BaseBlock):
         X, y = source_df.values, y
         default_params = self.generate_default_model_parameter(X, y, experiment)
 
-        with experiment.mark_time(prefix='train_'):
+        with experiment.mark_time(prefix='train'):
             models, oof = self.run_oof_train(X, y, default_params, experiment=experiment)
 
         self._fitted_models = models
@@ -335,7 +349,7 @@ class MetaBlock(EstimatorMixin, BaseBlock):
                 oof[idx_valid] = pred_i
                 models.append(clf)
 
-                exp_i.mark('model_params', clf.get_params(deep=False))
+                exp_i.mark('model_params', clf.get_params(deep=True))
                 exp_i.mark('n_fold', i)
                 exp_i.mark('split_info', {
                     'train_shape': idx_train.sum(),
@@ -425,7 +439,7 @@ class TunerBlock(MetaBlock):
                  n_trials=200,
                  scoring_strategy: str = 'fold',
                  scoring: Union[str, Callable, None] = None,
-                 optuna_jobs: int = -1,
+                 optuna_jobs: int = 1,
                  **kwargs):
         """
         Optuna Optimization Model Feature
@@ -438,12 +452,18 @@ class TunerBlock(MetaBlock):
                 If set as `"fold"`, the score are calculated each by fold and use mean of them for optimization.
                 If set as `"whole"`, the score is calculated whole data.
             scoring:
-                scoring method. String or Scoring Object
+                scoring method. String or Scoring Object.
+                When optimizing parameters, the best parameters in the sense of this score are chosen.
+                By default (pass None), For regressor model, use `RMSE` metric and for classifier, use `ROU AUC` scoring.s
                  (scoring obj must be satisfied check_scoring validation)
-            **kwargs:
-                pass to superclass
+            optuna_jobs:
+                optuna parallel jobs.
+                [NOTE]
+                    when set > 1, pre-post process model fail to jit input / target scaling class.
+                    so it is recommend to set = 1.
         """
         super(TunerBlock, self).__init__(name=name, parent=parent, evaluations=evaluations)
+
         self.study = None  # type: Union[Study, None]
         self.n_trails = n_trials
         self.optuna_jobs = optuna_jobs
@@ -542,7 +562,10 @@ class TunerBlock(MetaBlock):
                 scores.append(score_i)
             score = np.mean(scores)
         else:
-            raise ValueError()
+            import warnings
+            warnings.warn(
+                'Invalid storing strategy pass: {}. Use the `whole` strategy instead'.format(self.scoring_strategy))
+            score = self.calculate_score(y, oof, sample_weight)
         return score
 
     def generate_default_model_parameter(self, X, y,
@@ -564,11 +587,11 @@ class TunerBlock(MetaBlock):
 
         self.study = optuna.study.create_study(direction='maximize')
 
-
+        # note: logging each trial is too noisy, so run all trial objective with silent context.
         with experiment.silent():
             objective = lambda trial: self.get_objective(trial, X, y, experiment)
             # Stop model logging while optuna optimization
-            with experiment.mark_time('optuna_') as exp:
+            with experiment.mark_time('optuna_'):
                 self.study.optimize(objective, n_trials=self.n_trails, n_jobs=self.optuna_jobs)
 
         experiment.logger.info('best trial params: {}'.format(self.study.best_params))
@@ -585,7 +608,8 @@ class TunerBlock(MetaBlock):
         return best_params
 
 
-class EnsembleBlock(BaseBlock):
+class EnsembleBlock(EstimatorMixin, BaseBlock):
+
     def __init__(self, name, agg='mean', **kwargs):
         name = f'{name}_{agg}'
         super(EnsembleBlock, self).__init__(name=name, **kwargs)
