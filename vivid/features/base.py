@@ -1,6 +1,7 @@
 from typing import Union, Iterable, List
 
 import pandas as pd
+from sklearn.base import BaseEstimator
 
 from vivid.backends import ExperimentBackend
 from vivid.core import BaseBlock
@@ -10,25 +11,25 @@ def get_target_columns(column: Union[str, List],
                        excludes: Union[None, List],
                        source_df: pd.DataFrame) -> Iterable:
     if column == '__all__':
-        return source_df.columns.tolist()
+        column = source_df.columns.tolist()
 
     if isinstance(column, str):
         return [column]
     if isinstance(column, Iterable):
-        return [str(x) for x in column]
+        return [x for x in column]
 
     return []
 
 
-class AbstractColumnWiseBlock(BaseBlock):
+class ColumnWiseBlock(BaseBlock):
     engine = None
 
     def __init__(self, name, column='__all__', excludes=None, **kwargs):
-        super(AbstractColumnWiseBlock, self).__init__(name=name, **kwargs)
+        super(ColumnWiseBlock, self).__init__(name=name, **kwargs)
         self.column = column
         self.excludes = excludes
 
-    def create_new_engine(self):
+    def create_new_engine(self, column_name: str) -> BaseEstimator:
         return self.engine()
 
     def unzip(self, experiment: ExperimentBackend):
@@ -45,7 +46,7 @@ class AbstractColumnWiseBlock(BaseBlock):
 
         mappings = {}
         for c in sorted(columns):
-            clf = self.create_new_engine()
+            clf = self.create_new_engine(c)
             clf.fit(source_df[c], y=y)
             mappings[c] = clf
         self.mappings_ = mappings
