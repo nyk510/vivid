@@ -6,21 +6,27 @@ import dataclasses
 import gc
 import hashlib
 from collections import Counter
-from typing import Union, List, Dict, Optional
+from typing import Union, List, Optional
 
 import numpy as np
 import pandas as pd
+from sklearn.exceptions import NotFittedError
 
 from .backends.experiments import ExperimentBackend
+from .utils import get_logger
+
+logger = get_logger(__name__)
 
 
-def network_hash(block: 'BaseBlock') -> str:
+def network_hash(block: 'BaseBlock', size=8) -> str:
     """
-    generate unique key of the network structure
+    generate unique key of the network structure.
 
     Args:
         block:
             BaseBlock instance.
+        size:
+            hash key string length. default=8.
 
     Returns:
         unique hash string
@@ -29,7 +35,33 @@ def network_hash(block: 'BaseBlock') -> str:
     s = block._to_hash()
     for b in block._all_parents():
         s += b._to_hash()
-    return hashlib.sha1(s.encode('UTF-8')).hexdigest()[:8] + f'__{block.name}'
+    return block.name + '__' + hashlib.sha1(s.encode('UTF-8')).hexdigest()[:size]
+
+
+def not_fitted_blocks(block: 'BaseBlock', experiment: ExperimentBackend) -> List['BaseBlock']:
+    """
+    whether the all network related to the block in the experiment
+
+    Args:
+        block:
+        experiment:
+
+    Returns:
+
+    """
+    retval = []
+    if not block.check_is_fitted(experiment):
+        experiment.logger.info(f'> [ ] {block.name}: NG: not fitted.')
+        retval += [block]
+    else:
+        experiment.logger.info(f'> [x]: {block.name} OK')
+
+    if block.has_parent:
+        experiment.logger.info(f'request from {block.name} ---')
+    for parent in block.parent_blocks:
+        with experiment.as_environment(parent.runtime_env, style='flatten') as exp:
+            retval += not_fitted_blocks(parent, exp)
+    return retval
 
 
 @dataclasses.dataclass
@@ -88,7 +120,7 @@ class BaseBlock(object):
 
     def __init__(self,
                  name: str,
-                 parent: Union[None, 'BaseBlock', List['BaseBlock'], Dict] = None,
+                 parent: Union[None, 'BaseBlock', List['BaseBlock']] = None,
                  evaluations: List[AbstractEvaluation] = None):
         """
         Args:
@@ -99,8 +131,9 @@ class BaseBlock(object):
             parent:
                 parent_blocks feature. can set List or single Abstract Feature instance.
             evaluations:
-                report functions. these function must deal the `EvaluationEnv` dataset
-                by default, set `SimpleEvaluation`
+                evaluation functions. these function must be callable, and deal the `EvaluationEnv` dataset.
+                it is recommended that the sub-class of `AbstractEvaluation` class.
+                by default, set `SimpleEvaluation`.
         """
         self.is_entrypoint = parent is None
         self._parent = parent
@@ -108,8 +141,6 @@ class BaseBlock(object):
         self._is_root_context = False
         self._refer_cache = 0
         self._cache = {}
-
-        self.primary_block = self._parent[0] if self.has_parent else None
         self._id = None
 
         if evaluations is None:
@@ -118,15 +149,27 @@ class BaseBlock(object):
             ]
         self.evaluations = evaluations
 
-    def _to_hash(self):
+    def _to_hash(self) -> str:
+        """
+        describe the block uniquely as possible
+
+        Returns:
+            almost unique block string
+        """
         return self.name
 
     @property
     def runtime_env(self):
         return network_hash(self)
 
-    def check_is_ready_to_predict(self):
+    def check_is_fitted(self, experiment: ExperimentBackend):
         return True
+
+    def all_network_blocks(self):
+        retval = [self]
+        for b in self.parent_blocks:
+            retval += b.all_network_blocks()
+        return retval
 
     def __repr__(self):
         return '_'.join([self.name, *[str(m.name) for m in self.parent_blocks]])
@@ -146,7 +189,7 @@ class BaseBlock(object):
         If has single parent, converted to list like `[self._parent]`
 
         Returns:
-            array of blocks
+            array of parent blocks
         """
         if self._parent is None:
             return []
@@ -186,24 +229,25 @@ class BaseBlock(object):
         pass
 
     def show_network(self, depth=0, prefix=' |-', sep='**'):
-        print(f'{sep * depth}{prefix}[{depth}] {self.name}')
+        print(f'{sep * depth}{prefix}[{depth}] {self.name} <{self.runtime_env}>')
         if self.parent_blocks:
             for block in self.parent_blocks:
                 block.show_network(depth=depth + 1, prefix=prefix, sep=sep)
         return
 
     def _save_cache(self, oof_df):
+        logger.debug('save to cache')
         self._cache[self._forward_cache_key] = oof_df
 
-    def _load_cache(self, logger=None):
+    def _load_cache(self):
         self._refer_cache -= 1
-        logger.info(f'{self.name}: remaining refer {self._refer_cache + 1} -> {self._refer_cache}')
+        logger.debug(f'{self.name}: remaining refer {self._refer_cache + 1} -> {self._refer_cache}')
         out = self._cache.get(self._forward_cache_key, None)
         if out is None:
             raise ValueError('cant find cache data. ' + ','.join(self._cache.keys()) \
                              + str(self._cache))
-        if self._refer_cache == 0 and logger is not None:
-            logger.info('clear cache : {}'.format(self.clear_cache()))
+        if self._refer_cache == 0:
+            logger.debug('clear cache : {}'.format(self.clear_cache()))
         return out
 
     @property
@@ -211,7 +255,7 @@ class BaseBlock(object):
         return self._cache.get(self._forward_cache_key, None) is not None
 
     def _set_network(self):
-        nodes = set(self._all_parents())
+        nodes = set(self.all_network_blocks())
 
         # calculate call counts on forward pass
         all_parents = [x for b in nodes for x in b.parent_blocks]
@@ -220,6 +264,7 @@ class BaseBlock(object):
         counts = Counter(all_parents)
         for i, (block, call_count_i) in enumerate(counts.items()):
             block._refer_cache = call_count_i - 1
+            logger.debug(f'{block.name} {call_count_i - 1}')
 
         self._is_root_context = True
         self._id = 0
@@ -284,9 +329,12 @@ class BaseBlock(object):
                 In the default behavior, created by parent_blocks features
                 Note that it is this value that is passed to call. (Not `input_df`).
                 If you calculate the feature importance, usually use `output_df` instead of `input_df`.
-            out_df: dataframe created by me. the return value `._fit_core` method.
-            y: target.
-            experiment: Experiment using at `._fit_core` method.
+            out_df:
+                dataframe created by me. the return value `._fit_core` method.
+            y:
+                target value.s
+            experiment:
+                Experiment using at `._fit_core` method.
 
         Returns:
             Nothing
@@ -317,51 +365,67 @@ class BaseBlock(object):
             is not changed. You must explicitly set the recreate argument to True in order to recreate it.
 
         Args:
-            input_df: predict target dataframe
-            ignore_storage: optional. If set as `True`, ignore cache file and call core create method (i.e. `self.call`).
+            input_df:
+                predict target dataframe.
+            ignore_storage:
+                optional. If set as `True`, ignore cache file.
+                ignore cache means that it is guaranteed that the `transform` method will be called.
 
         Returns:
             predict data
         """
         return self._forward(input_df, None, experiment, root, ignore_storage, is_fit_context=False)
 
-    def _before_forward(self, root: bool):
-        if root:
-            self._set_network()
-            self.clear_cache()
-        return self
-
     def _forward(self, input_df: pd.DataFrame, y: Union[None, np.ndarray],
                  experiment: Optional[ExperimentBackend] = None, root: bool = False,
                  ignore_storage: bool = False, is_fit_context: bool = False):
-        self._before_forward(root=root)
         if experiment is None:
             experiment = ExperimentBackend()
 
         if not isinstance(input_df, pd.DataFrame):
-            raise ValueError('Invalid `input_df`. Must be pandas DataFrame object. Actually: {}'.format(type(input_df)))
+            raise ValueError('Invalid `input_df` passed at {}.'.format(self.runtime_env) + \
+                             'Must be pandas DataFrame object. Actually: {}'.format(type(input_df)))
+
+        if root:
+            # restart as none root
+            self._set_network()
+            self.clear_cache()
+            with experiment.as_environment(self.runtime_env) as exp:
+                return self._forward(input_df, y, exp, root=False, ignore_storage=ignore_storage,
+                                     is_fit_context=is_fit_context)
+
         if self._has_cache_output:
-            return self._load_cache(experiment.logger)
+            logger.debug(f'{self.name} use cache prediction')
+            return self._load_cache()
 
-        with experiment.as_environment(self.runtime_env,
-                                       style='nested' if root else 'flatten') as my_exp:
-            out_df = self._create_or_load_output(input_df,
-                                                 y=y,
-                                                 experiment=my_exp,
-                                                 recreate=ignore_storage,
-                                                 is_fit_context=is_fit_context)
-
-        if self._refer_cache > 0:
+        out_df = self._create_or_load_output(input_df,
+                                             y=y,
+                                             experiment=experiment,
+                                             recreate=ignore_storage,
+                                             is_fit_context=is_fit_context)
+        logger.debug(f'{self.name} {self._refer_cache} after forwarding')
+        if self._refer_cache > 0 or self.is_estimator:
             self._save_cache(out_df)
-        self._after_forward(output_df=out_df, root=root, experiment=experiment)
         return out_df
 
-    def _after_forward(self, output_df, root, experiment):
-        if self._refer_cache > 0:
-            self.feat_on_train_df = output_df
-        if root:
-            experiment.logger.info('clear cache : {}'.format(self.clear_cache()))
-        return self
+    def _load_output_from_storage(self, storage_key: str, experiment: ExperimentBackend, is_fit_context=False):
+        if not experiment.has(storage_key):
+            raise FileNotFoundError('{} is not found at experiment: {}'.format(storage_key, experiment))
+
+        if is_fit_context:
+            not_fit_blocks = not_fitted_blocks(self, experiment)
+            if len(not_fit_blocks) > 0:
+                experiment.logger.info(
+                    'Network has not fitted blocks. ' + ', '.join([b.name for b in not_fit_blocks]) + \
+                    '. create these blocks and renew stored output features.')
+                raise FileNotFoundError()
+
+            experiment.logger.info('All Feature are ready to prediction. Load cache output.')
+
+            # if there is a meta-file on experiment, load from experiment, not create
+        experiment.logger.info('load from storage: {}'.format(storage_key))
+        out_df = experiment.load_object(storage_key)
+        return out_df
 
     def _create_or_load_output(self,
                                input_df,
@@ -371,19 +435,16 @@ class BaseBlock(object):
                                is_fit_context: bool = False) -> pd.DataFrame:
         storage_key = 'train_oof' if is_fit_context else 'new_predict'
 
-        if not recreate and experiment.has(storage_key):
+        if not recreate:
             try:
-                # if there is a meta-file on experiment, load from experiment, not create
-                experiment.logger.info('try: load from storage')
-                out_df = experiment.load_object(storage_key)
-                experiment.logger.info('success.')
-                return out_df
-            except FileNotFoundError as e:
-                experiment.logger.warning(e)
+                return self._load_output_from_storage(storage_key, experiment=experiment, is_fit_context=is_fit_context)
+            except FileNotFoundError:
+                pass
 
-        parent_out_df = self._prepare_parent_output(input_df, y, experiment, recreate, is_fit_context=is_fit_context)
+        parent_out_df = self._prepare_parent_output(input_df, y, experiment, recreate,
+                                                    is_fit_context=is_fit_context)
         if is_fit_context:
-            with experiment.mark_time('train_'):
+            with experiment.mark_time('train'):
                 experiment.logger.info(f'start train {self.name}')
                 out_df = self._fit_core(source_df=parent_out_df, y=y, experiment=experiment)
 
@@ -397,7 +458,8 @@ class BaseBlock(object):
             if experiment.can_save:
                 # run transform, store as local attribute
                 self.unzip(experiment)
-            self.check_is_ready_to_predict()
+            if not self.check_is_fitted(experiment):
+                raise NotFittedError()
             out_df = self.transform(parent_out_df)
 
         experiment.save_as_python_object(storage_key, out_df)
@@ -415,10 +477,11 @@ class BaseBlock(object):
         parent_out_df = pd.DataFrame()
         if self.has_parent:
             for b in self.parent_blocks:
-                if is_fit_context:
-                    out_i = b.fit(input_df, y=y, experiment=experiment, ignore_storage=recreate, root=False)
-                else:
-                    out_i = b.predict(input_df, experiment, ignore_storage=recreate, root=False, )
+                with experiment.as_environment(b.runtime_env, style='flatten') as exp:
+                    if is_fit_context:
+                        out_i = b.fit(input_df, y=y, experiment=exp, ignore_storage=recreate, root=False)
+                    else:
+                        out_i = b.predict(input_df, exp, ignore_storage=recreate, root=False, )
 
                 out_i = out_i.add_prefix(b.name + '_')
                 parent_out_df = pd.concat([parent_out_df, out_i], axis=1)
