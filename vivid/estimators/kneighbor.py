@@ -5,24 +5,24 @@
 from optuna.trial import Trial
 from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
 
-from .base import GenericMetaBlock, GenericTunerBlock
+from .base import MetaBlock, TunerBlock
 
 
-class KNNClassifierBlock(GenericMetaBlock):
+class KNNClassifierBlock(MetaBlock):
     model_class = KNeighborsClassifier
     initial_params = {
         'n_neighbors': 5
     }
 
 
-class KNNRegressorBlock(GenericMetaBlock):
+class KNNRegressorBlock(MetaBlock):
     model_class = KNeighborsRegressor
     initial_params = {
         'n_neighbors': 5
     }
 
 
-class TunedKNNRegressorBlock(GenericTunerBlock):
+class TunedKNNRegressorBlock(TunerBlock):
     model_class = KNeighborsRegressor
 
     def generate_model_class_try_params(self, trial: Trial):
