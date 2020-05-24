@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from vivid.featureset.encodings import CountEncodingAtom, OneHotEncodingAtom, InnerMergeAtom
+from vivid.features.encodings import CountEncodingAtom, OneHotEncodingAtom, InnerMergeAtom
 
 
 class BaseTestCase:

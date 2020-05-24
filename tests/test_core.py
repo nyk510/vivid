@@ -45,19 +45,19 @@ def test_collect_parent():
     assert sorted(parent, key=lambda x: x.name) == sorted([a, b, c, a], key=lambda x: x.name)
 
 
-def test_invalid_fit_core_implement(train_data):
+def test_invalid_fit_core_implement(regression_set):
     class A(BaseBlock):
         def _fit_core(self, source_df, y, experiment) -> pd.DataFrame:
             return experiment
 
     a = A(name='a')
-    input_df, y = train_data
+    input_df, y = regression_set
 
     with pytest.raises(ValueError):
         a.fit(input_df, y)
 
 
-def test_block_transform_count(train_data):
+def test_block_transform_count(regression_set):
     a = CounterBlock(name='a')
     b = CounterBlock(name='b')
     c = CounterBlock(name='c')
@@ -68,7 +68,7 @@ def test_block_transform_count(train_data):
 
     g = CounterBlock(name='g', parent=[e, f])
 
-    input_df, y = train_data
+    input_df, y = regression_set
     g.fit(input_df, y)
 
     assert g._is_root_context, g

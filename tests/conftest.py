@@ -31,13 +31,8 @@ def binary_Xy(regression_Xy):
 
 
 @pytest.fixture
-def train_data() -> [pd.DataFrame, np.ndarray]:
-    n_rows = 100
-    n_cols = 10
-    x = np.random.uniform(size=(n_rows, n_cols))
-    y = np.random.uniform(size=(n_rows,))
-    train_df = pd.DataFrame(x)
-    return train_df, y
+def regression_set(regression_Xy) -> [pd.DataFrame, np.ndarray]:
+    return pd.DataFrame(regression_Xy[0]), regression_Xy[1]
 
 
 @pytest.fixture
@@ -52,7 +47,8 @@ def toy_df() -> pd.DataFrame:
 @pytest.fixture
 def output_dir() -> str:
     default_path = os.path.join(os.path.expanduser('~'), '.vivid', 'test_cache')
-    return os.environ.get('OUTPUT_DIR', default_path)
+    path = os.environ.get('OUTPUT_DIR', default_path)
+    return path
 
 
 @pytest.fixture(scope='function', autouse=True)
@@ -68,8 +64,8 @@ def clean_up(tmpdir: str):
     shutil.rmtree(tmpdir)
 
 
-def test_sample_feature(train_data):
-    train_df, y = train_data
+def test_sample_feature(regression_set):
+    train_df, y = regression_set
     feat = SampleFeature()
     df = feat.fit(train_df, y=y)
-    assert len(df) == len(train_data)
+    assert len(df) == len(regression_set)
