@@ -475,17 +475,20 @@ class BaseBlock(object):
                                is_fit_context=False) -> pd.DataFrame:
         # prepare parent outputs
         parent_out_df = pd.DataFrame()
-        if self.has_parent:
-            for b in self.parent_blocks:
-                with experiment.as_environment(b.runtime_env, style='flatten') as exp:
-                    if is_fit_context:
-                        out_i = b.fit(input_df, y=y, experiment=exp, ignore_storage=recreate, root=False)
-                    else:
-                        out_i = b.predict(input_df, exp, ignore_storage=recreate, root=False, )
 
-                out_i = out_i.add_prefix(b.name + '_')
-                parent_out_df = pd.concat([parent_out_df, out_i], axis=1)
-        else:
-            parent_out_df = input_df
+        # if no parent, use original input directly
+        if not self.has_parent:
+            return input_df
+
+        for b in self.parent_blocks:
+            with experiment.as_environment(b.runtime_env, style='flatten') as exp:
+                if is_fit_context:
+                    out_i = b.fit(input_df, y=y, experiment=exp, ignore_storage=recreate, root=False)
+                else:
+                    out_i = b.predict(input_df, exp, ignore_storage=recreate, root=False, )
+
+            # create a class for deal block name and features (dataclass, etc.)
+            out_i = out_i.add_prefix(b.name + '_')
+            parent_out_df = pd.concat([parent_out_df, out_i], axis=1)
 
         return parent_out_df
