@@ -5,7 +5,6 @@
 import os
 from typing import Callable
 
-from .backends import DataFrameBackend, ExperimentBackend
 from .utils import import_string
 
 __author__ = "nyk510"
@@ -19,14 +18,10 @@ class Settings:
 
     LOG_LEVEL = os.getenv('VIVID_LOG_LEVEL', 'INFO')
     TXT_LOG_LEVEL = os.getenv('VIVID_TXT_LOG_LEVEL', 'DEBUG')
-
-    CACHE_ON_TRAIN = os.getenv('VIVID_CACHE_ON_TRAIN', 'true') == 'true'
-    CACHE_ON_TEST = os.getenv('VIVID_CACHE_ON_TEST', 'true') == 'true'
-    CACHE_DIR = os.path.join(os.path.expanduser('~'), '.vivid')
+    PROJECT_ROOT = os.getenv('VIVID_PROJECT_ROOT', None)
 
     # using csv save / load backend class
     DATAFRAME_BACKEND = 'vivid.backends.dataframes.JoblibBackend'
-
     EXPERIMENT_BACKEND = 'vivid.backends.experiments.LocalExperimentBackend'
     COMET_API_KEY = os.getenv('VIVID_COMET_API_KEY', None)
 
@@ -47,6 +42,6 @@ class CacheLoader:
 
 
 get_dataframe_backend = CacheLoader(
-    default_loader=lambda: Settings.DATAFRAME_BACKEND)  # type: Callable[[str], DataFrameBackend]
+    default_loader=lambda: Settings.DATAFRAME_BACKEND)  # type: Callable[[str], 'DataFrameBackend']
 get_experiment_backend = CacheLoader(
-    default_loader=lambda: Settings.EXPERIMENT_BACKEND)  # type: Callable[[str], ExperimentBackend]
+    default_loader=lambda: Settings.EXPERIMENT_BACKEND)  # type: Callable[[str], 'ExperimentBackend']
