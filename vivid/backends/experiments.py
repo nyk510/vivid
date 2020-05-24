@@ -19,12 +19,17 @@ from vivid.utils import get_logger
 class ExperimentBackend:
     """base class for all experiment backends"""
 
-    def __init__(self, namespace=None, logger=None):
+    def __init__(self, namespace=None, keys=None, logger=None, datafame_backend=None):
         self.namespace = namespace
-        self.logger = logger if logger is not None else get_logger(name=__name__)
+        self.keys = [] if keys is None else keys
+        self.logger = get_logger(__name__)
+        self.dataframe_backend = get_dataframe_backend() if datafame_backend is None else datafame_backend
 
     def initialize_logger(self):
         pass
+
+    def __enter__(self):
+        self.start()
 
     def start(self):
         pass
@@ -84,14 +89,18 @@ class ExperimentBackend:
         pass
 
     @contextmanager
-    def mark_time(self, prefix='') -> ContextManager['ExperimentBackend']:
+    def mark_time(self, prefix: str) -> ContextManager['ExperimentBackend']:
         start = datetime.now()
+        self.logger.debug('start time tracking...for [{}]'.format(prefix))
         yield self
         end = datetime.now()
         duration = (end - start).total_seconds() / 60
-        self.mark(prefix + 'start_at', start)
-        self.mark(prefix + 'end_at', end)
-        self.mark(prefix + 'duration_minutes', f'{duration:.2f}')
+        self.logger.debug('finished. duration: {:.2f}[min]'.format(duration))
+        self.mark(prefix, {
+            'start_at': start,
+            'end_at': end,
+            'duration_minutes': '{:.2f}'.format(duration)
+        })
 
     @contextmanager
     def as_environment(self, *keys, style='flatten') -> ContextManager['ExperimentBackend']:
@@ -105,10 +114,6 @@ class ExperimentBackend:
         yield self
         self.namespace = _tmp
         self.logger.disabled = False
-
-    @property
-    def dataframe_backend(self):
-        return get_dataframe_backend()
 
     def clear(self):
         pass
@@ -130,7 +135,7 @@ def as_safety(func):
         wrapper function
     """
 
-    def inner(self: 'LocalExperimentBackend', *args, **kwargs):
+    def inner(self: 'ExperimentBackend', *args, **kwargs):
         if not self.can_save:
             return None
         return func(self, *args, **kwargs)
@@ -141,21 +146,39 @@ def as_safety(func):
 class LocalExperimentBackend(ExperimentBackend):
     """save object to local storage backend"""
 
-    def __init__(self, namespace=None, mark_filename='metrics.json', keys=None, **kwargs):
-
+    def __init__(self, namespace=None, mark_filename='metrics.json', **kwargs):
         if namespace is not None:
             namespace = os.path.abspath(namespace)
         super(LocalExperimentBackend, self).__init__(namespace, **kwargs)
 
         self.mark_filename = mark_filename
-        self.keys = keys
+
+        prepends = []
+        if namespace:
+            prepends += [os.path.basename(namespace)]
+        else:
+            prepends += [__name__]
+        prepends += map(str, self.keys)
+        logger_name = '/'.join(prepends)
         if self.can_save:
-            os.makedirs(self.namespace, exist_ok=True)
+            os.makedirs(self.output_dir, exist_ok=True)
+
+        self.logger = get_logger(name=logger_name,
+                                 output_file=self.logging_path,
+                                 format_str='%(name)-30s: %(levelname)-8s %(message)s')
+        self.logger.debug('switch to {}'.format(self.output_dir))
+
+    @property
+    def logging_path(self):
+        if not self.output_dir:
+            return None
+
+        return os.path.join(self.output_dir, 'log.txt')
 
     @property
     def metric_path(self):
         if self.namespace is not None:
-            return os.path.join(self.namespace, self.mark_filename)
+            return os.path.join(self.output_dir, self.mark_filename)
         return None
 
     @as_safety
@@ -167,8 +190,12 @@ class LocalExperimentBackend(ExperimentBackend):
 
     @property
     def output_dir(self):
-        """namespace alias"""
-        return self.namespace
+        """exact output directory"""
+        if self.namespace is None:
+            return None
+        if self.keys is None:
+            return self.namespace
+        return os.path.join(self.namespace, *self.keys)
 
     @as_safety
     def get_marked(self):
@@ -193,7 +220,7 @@ class LocalExperimentBackend(ExperimentBackend):
             key = key
         else:
             key = f'{key}.{ext}'
-        return os.path.join(self.namespace, key)
+        return os.path.join(self.output_dir, key)
 
     @as_safety
     def save_json(self, key, obj: dict):
@@ -213,7 +240,7 @@ class LocalExperimentBackend(ExperimentBackend):
     @as_safety
     def save_as_python_object(self, key, obj):
         p = joblib.dump(obj, self._to_path(key, ext='joblib'))
-        self.logger.debug(f'save to {p}')
+        self.logger.debug(f'save {str(obj)} to {p}')
 
     @as_safety
     def load_object(self, key):
@@ -224,7 +251,7 @@ class LocalExperimentBackend(ExperimentBackend):
         shutil.rmtree(self.output_dir)
 
     @contextmanager
-    def as_environment(self, *keys, style='flatten') -> ContextManager['ExperimentBackend']:
+    def as_environment(self, *keys, style='nested') -> ContextManager['ExperimentBackend']:
         """
         change environment to the keys and yield return myself
 
@@ -233,18 +260,23 @@ class LocalExperimentBackend(ExperimentBackend):
             keys:
                 new environment's key. list of strings.
         """
-        if self.namespace is None:
-            namespace = None
-        elif style == 'flatten':
-            dir_path = os.path.dirname(self.namespace)
-            namespace = os.path.join(dir_path, '-'.join(keys))
+        if style == 'flatten':
+            keys = list(keys)
         else:
-            namespace = os.path.join(self.namespace, *keys)
-        children = LocalExperimentBackend(namespace=namespace,
-                                          mark_filename=self.mark_filename,
-                                          logger=self.logger)
+            keys = self.keys + list(keys)
 
-        yield children
+        children = LocalExperimentBackend(namespace=self.namespace,
+                                          mark_filename=self.mark_filename,
+                                          keys=keys,
+                                          datafame_backend=self.dataframe_backend)
+
+        if self.logger.disabled:
+            with children.silent():
+                yield children
+        else:
+            yield children
+
+        del children
 
 
 class CometMLExperimentBackend(ExperimentBackend):
