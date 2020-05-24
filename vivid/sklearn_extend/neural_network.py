@@ -45,23 +45,27 @@ def dense_bnn_block(input_tensor, hidden_dim, activation=ReLU, dropout_ratio=.5)
     x = BatchNormalization()(x)
     x = activation()(x)
     if dropout_ratio > 0:
-        x = Dropout(rate=dropout_ratio)
+        x = Dropout(rate=dropout_ratio)(x)
     return x
 
 
-class SKerasMixin:
-    def fit(self: Union['SKerasMixin', KerasClassifier], x, y, sample_weight=None, **kwargs):
+class ScikitKerasMixin:
+    """
+    Mixin Class adapt Keras model to scikit-learn api
+    """
+
+    def fit(self: Union['ScikitKerasMixin', KerasClassifier], x, y, sample_weight=None, **kwargs):
         self.sk_params['n_input'] = x.shape[1]
-        history = super(SKerasMixin, self).fit(x, y, sample_weight=sample_weight, **kwargs)
+        history = super(ScikitKerasMixin, self).fit(x, y, sample_weight=sample_weight, **kwargs)
         self.history_ = history
         return self
 
     def bottleneck(self, input_tensor):
-        hiden_dims = [
+        hidden_dims = [
             1024, 512, 256, 128
         ]
         x = input_tensor
-        for hidden in hiden_dims:
+        for hidden in hidden_dims:
             x = dense_bnn_block(x, hidden_dim=hidden)
 
         x = Dense(128, activation='relu')(x)
@@ -80,7 +84,7 @@ class SKerasMixin:
         raise NotImplementedError()
 
 
-class SKerasClassifier(ClassifierMixin, SKerasMixin, KerasClassifier):
+class ScikitKerasClassifier(ClassifierMixin, ScikitKerasMixin, KerasClassifier):
     def __call__(self, n_input) -> Model:
         input = Input(shape=(n_input,))
         feature = self.bottleneck(input)
@@ -94,7 +98,7 @@ class SKerasClassifier(ClassifierMixin, SKerasMixin, KerasClassifier):
         return model
 
 
-class SKerasRegressor(RegressorMixin, SKerasMixin, KerasRegressor):
+class SKerasRegressor(RegressorMixin, ScikitKerasMixin, KerasRegressor):
     def __call__(self, n_input, *args, **kwargs):
         input = Input(shape=(n_input,))
         feature = self.bottleneck(input)

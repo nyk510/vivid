@@ -5,7 +5,7 @@ from keras.callbacks import ReduceLROnPlateau
 from sklearn.utils import class_weight
 
 from vivid.estimators.base import MetaBlock
-from vivid.sklearn_extend.neural_network import SKerasClassifier, SKerasRegressor, ROCAucCallback
+from vivid.sklearn_extend.neural_network import ScikitKerasClassifier, SKerasRegressor, ROCAucCallback
 
 
 class BaseSkerasBlock(MetaBlock):
@@ -44,7 +44,7 @@ class BaseSkerasBlock(MetaBlock):
 
 
 class KerasClassifierBlock(BaseSkerasBlock):
-    model_class = SKerasClassifier
+    model_class = ScikitKerasClassifier
 
     def get_keras_callbacks(self, training_set, validation_set):
         return [
@@ -59,7 +59,7 @@ class KerasClassifierBlock(BaseSkerasBlock):
                                     indexes_set: Tuple[np.ndarray, np.ndarray],
                                     experiment) -> dict:
         params = super(KerasClassifierBlock, self) \
-            .get_fit_params_on_each_fold(model_params, training_set, validation_set, indexes_set)
+            .get_fit_params_on_each_fold(model_params, training_set, validation_set, indexes_set, experiment)
 
         y = training_set[1]
         weight = class_weight.compute_class_weight('balanced', np.unique(y), y)
