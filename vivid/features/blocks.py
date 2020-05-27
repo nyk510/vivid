@@ -1,12 +1,13 @@
 import pandas as pd
+from sklearn.base import BaseEstimator
 
 from vivid.backends.experiments import ExperimentBackend
 from .base import ColumnWiseBlock, get_target_columns
-from .engine import BinCountEncoder
+from .engine import BinCountEncoder, OneHotEncoder, CountEncoder
 
 
 class FilterBlock(ColumnWiseBlock):
-    def _fit_core(self, source_df, y, experiment) -> pd.DataFrame:
+    def fit(self, source_df, y, experiment) -> pd.DataFrame:
         return self.transform(source_df)
 
     def transform(self, source_df):
@@ -32,3 +33,27 @@ class BinningCountBlock(ColumnWiseBlock):
 
     def get_output_colname(self, column):
         return '{}_bins={}'.format(column, self.bins)
+
+
+class OneHotEncodingBlock(ColumnWiseBlock):
+    engine = OneHotEncoder
+
+    def create_new_engine(self, column_name: str) -> BaseEstimator:
+        return self.engine(min_freq=0, max_columns=20)
+
+    def transform(self, source_df):
+        out_df = pd.DataFrame()
+
+        for column, clf in self.mappings_.items():
+            out_i = clf.transform(source_df[column].values)
+            out_df = pd.concat(
+                [out_df, pd.DataFrame(out_i, columns=['{}_{}'.format(column, i) for i in range(len(out_i.T))])]
+                , axis=1)
+        return out_df
+
+
+class CountEncodingBlock(ColumnWiseBlock):
+    engine = CountEncoder
+
+    def get_output_colname(self, column):
+        return 'CE_{}'.format(column)
