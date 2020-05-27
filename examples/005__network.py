@@ -1,11 +1,12 @@
 import pandas as pd
 
+from vivid import create_runner
 from vivid.backends.experiments import LocalExperimentBackend
 from vivid.core import BaseBlock
 
 
 class TestBlock(BaseBlock):
-    def _fit_core(self, source_df, y, experiment: LocalExperimentBackend) -> pd.DataFrame:
+    def fit(self, source_df, y, experiment: LocalExperimentBackend) -> pd.DataFrame:
         print(experiment.output_dir, self.runtime_env)
         return source_df
 
@@ -26,6 +27,7 @@ if __name__ == '__main__':
 
     exp = LocalExperimentBackend(namespace='./outputs/test')
     input_df = pd.DataFrame()
-    g.fit(input_df, experiment=exp)
 
-    g.predict(input_df, experiment=exp)
+    runner = create_runner(g, experiment=exp)
+    runner.fit(input_df)
+    runner.predict(input_df)

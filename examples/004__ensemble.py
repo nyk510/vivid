@@ -1,6 +1,7 @@
 import pandas as pd
 from sklearn.datasets import load_boston
 
+from vivid import Runner
 from vivid.backends.experiments import LocalExperimentBackend
 from vivid.core import BaseBlock
 from vivid.estimators.base import EnsembleBlock
@@ -21,7 +22,7 @@ class SumBlock(BaseBlock):
 
 if __name__ == '__main__':
     features = [
-        FilterBlock(name='copy', column='__all__'),
+        FilterBlock(name='all', column='__all__'),
         BinningCountBlock('bin', column='__all__'),
         SumBlock(name='sum')
     ]
@@ -41,22 +42,12 @@ if __name__ == '__main__':
     ]
     stacked_stack = TunedRidgeBlock('ridge', parent=[*stacking, *models, *features])
 
-    print(stacked_stack.show_network())
+    stacked_stack.show_network()
     X, y = load_boston(return_X_y=True)
     train_df = pd.DataFrame(X)
 
     experiment = LocalExperimentBackend(namespace='./outputs/ensemble')
 
-    stacked_stack.fit(train_df, y, experiment=experiment)
-    stacked_stack.predict(train_df, experiment=experiment, ignore_storage=True)
-
-    other_model = XGBRegressorBlock('xgb2', parent=features)
-    other_model.fit(train_df, y, experiment=experiment)
-
-    # ensemble model already fitted,
-    ensemble.fit(train_df, y, experiment=experiment)
-
-    estimators = set([b for b in stacked_stack.all_network_blocks() if b.is_estimator])
-    for b in estimators:
-        print('predict {}'.format(b.name))
-        b.predict(train_df)
+    stacked_runner = Runner(blocks=stacked_stack, experiment=experiment)
+    stacked_runner.fit(train_df, y)
+    stacked_runner.predict(train_df)

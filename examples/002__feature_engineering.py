@@ -1,6 +1,8 @@
 import pandas as pd
 from sklearn.datasets import load_boston
 
+from vivid import Runner
+from vivid.backends.experiments import LocalExperimentBackend
 from vivid.core import BaseBlock
 from vivid.estimators.boosting import XGBRegressorBlock
 from vivid.features.blocks import BinningCountBlock
@@ -29,5 +31,7 @@ if __name__ == '__main__':
 
     X, y = load_boston(return_X_y=True)
     train_df = pd.DataFrame(X)
-    xgb.fit(train_df, y)
-    xgb.predict(train_df)
+
+    runner = Runner(xgb, experiment=LocalExperimentBackend(namespace='./outputs/feature_engineering'))
+    runner.fit(train_df, y, ignore_past_log=True)
+    runner.predict(train_df)
