@@ -14,14 +14,14 @@ from ..utils import get_logger
 logger = get_logger(__name__)
 
 scaler = {
-    True: StandardScaler(),
-    'standard': StandardScaler(),
-    'minmax': MinMaxScaler()
+    True: StandardScaler,
+    'standard': StandardScaler,
+    'minmax': MinMaxScaler
 }
 
 
 def get_scalar_by_name(name) -> Union[None, StandardScaler]:
-    return scaler.get(name, None)
+    return scaler.get(name, None)()
 
 
 class UtilityTransform(TransformerMixin, BaseEstimator):
