@@ -41,7 +41,7 @@ class ColumnWiseBlock(BaseBlock):
     def get_output_colname(self, column):
         return self.name + '_' + column
 
-    def _fit_core(self, source_df, y, experiment) -> pd.DataFrame:
+    def fit(self, source_df, y, experiment) -> pd.DataFrame:
         columns = get_target_columns(self.column, excludes=self.excludes, source_df=source_df)
 
         mappings = {}

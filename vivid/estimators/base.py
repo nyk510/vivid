@@ -17,8 +17,11 @@ from vivid.backends.experiments import ExperimentBackend
 from vivid.core import AbstractEvaluation, EvaluationEnv, BaseBlock, SimpleEvaluation
 from vivid.metrics import regression_metrics, binary_metrics
 from vivid.sklearn_extend import PrePostProcessModel
+from vivid.utils import get_logger
 from vivid.visualize import NotSupportedError, visualize_feature_importance, visualize_distributions, \
     visualize_pr_curve, visualize_roc_auc_curve
+
+logger = get_logger(__name__)
 
 
 class MetricReport(AbstractEvaluation):
@@ -88,6 +91,8 @@ class CurveFigureReport(AbstractEvaluation):
         self.name = name
 
     def call(self, env: EvaluationEnv):
+        if env.block.is_regression_model:
+            return
         fig, ax = self.visualizer(y_true=env.y, y_pred=env.output_df.values[:, 0], )
         env.experiment.save_figure(self.name, fig=fig)
 
@@ -108,7 +113,7 @@ class EstimatorMixin:
 
 class MetaBlock(EstimatorMixin, BaseBlock):
     """Base class that creates Out of Fold features for input data
-    K-Fold CV is performed at the time of _fit_core to create K number of models.
+    K-Fold CV is performed at the time of fit to create K number of models.
     Returns the average of those predicted values ​​when testing
 
     The parameters used for learning are determined by the class variable `initial_params`.
@@ -184,7 +189,7 @@ class MetaBlock(EstimatorMixin, BaseBlock):
     def clear_fit_cache(self):
         del self._fitted_models
         import gc
-        print(self.name, gc.collect())
+        logger.info('[{}] clear cache models {}'.format(self.name, gc.collect()))
 
     def _get_fold_dir(self, current_cv: int):
         return f'cv={current_cv:02d}'
@@ -251,7 +256,7 @@ class MetaBlock(EstimatorMixin, BaseBlock):
 
         Args:
             default_params: default parameter.
-            indexes_set: _fit_core and validation index list for each fold.
+            indexes_set: fit and validation index list for each fold.
 
         Returns:
             parameter pass to model class
@@ -272,7 +277,7 @@ class MetaBlock(EstimatorMixin, BaseBlock):
             model_params: model parameters. It have been pass to model constructor.
             training_set: training (X_train, y_train) dataset. tuple of numpy array.
             validation_set: validation (X_valid, y_valid) dataset. tuple of numpy array.
-            indexes_set: _fit_core and validation index list for each fold.
+            indexes_set: fit and validation index list for each fold.
 
         Returns:
             fit parameter dict
@@ -282,11 +287,11 @@ class MetaBlock(EstimatorMixin, BaseBlock):
             params['sample_weight'] = self.sample_weight[indexes_set[0]]
         return params
 
-    def _fit_core(self, source_df, y, experiment: ExperimentBackend, ) -> pd.DataFrame:
+    def fit(self, source_df, y, experiment: ExperimentBackend) -> pd.DataFrame:
         X, y = source_df.values, y
         default_params = self.generate_default_model_parameter(X, y, experiment)
 
-        with experiment.mark_time(prefix='train'):
+        with experiment.mark_time(prefix='fit'):
             models, oof = self.run_oof_train(X, y, default_params, experiment=experiment)
 
         self._fitted_models = models
@@ -388,7 +393,7 @@ class MetaBlock(EstimatorMixin, BaseBlock):
                    indexes_set: tuple,
                    experiment: ExperimentBackend) -> PrePostProcessModel:
         """
-        _fit_core a new model class.
+        fit a new model class.
 
         Notes:
             in model_params, add scaling parameters for target / input (ex. target_scaling = False)
@@ -421,7 +426,7 @@ class MetaBlock(EstimatorMixin, BaseBlock):
         if fit_params is None:
             fit_params = {}
 
-        with experiment.mark_time('train'):
+        with experiment.mark_time('fit'):
             model.fit(X, y, **fit_params)
         return model
 
@@ -515,7 +520,7 @@ class TunerBlock(MetaBlock):
                 current trial object. create parameter using it.
 
         Returns:
-            parameters used by _fit_core out-of-fold in optimizing
+            parameters used by fit out-of-fold in optimizing
         """
         model_params = copy.deepcopy(self._initial_params)
         add_model_params = self.generate_model_class_try_params(trial)
