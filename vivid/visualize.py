@@ -44,14 +44,15 @@ def corr_euclid_clustermap(df, n_rows=None, n_cols=None, cmap='viridis', z_score
 
 
 def check_y_and_pred(y_true, y_pred) -> (np.ndarray, np.ndarray, list):
+    y_true = np.asarray(y_true)
     if len(y_true.shape) == 2:
         classes = range(y_true.shape[1])
     else:
         classes = [x for x in np.unique(y_true) if int(x) != 0]
     n_classes = len(classes)
 
-    y_true = np.array(y_true).reshape(-1, n_classes)
-    y_pred = np.array(y_pred).reshape(-1, n_classes)
+    y_true = np.asarray(y_true).reshape(-1, n_classes)
+    y_pred = np.asarray(y_pred).reshape(-1, n_classes)
     return y_true, y_pred, classes
 
 
@@ -75,7 +76,8 @@ def visualize_distributions(y_true, y_pred, ax: Union[None, plt.Axes] = None):
     return fig, ax
 
 
-def visualize_roc_auc_curve(y_true, y_pred, ax: Union[None, plt.Axes] = None,
+def visualize_roc_auc_curve(y_true, y_pred,
+                            ax: Union[None, plt.Axes] = None,
                             label_prefix: Union[None, str] = None) -> [Union[None, plt.Figure], plt.Axes]:
     check_classification_targets(y_true)
     fpr = dict()
@@ -164,7 +166,7 @@ def extract_importance(clf: BaseEstimator):
 
 
 def visualize_feature_importance(models,
-                                 columns,
+                                 columns: Union[None, List[str]] = None,
                                  plot_type='bar',
                                  ax: Union[None, plt.Axes] = None,
                                  top_n: Union[None, int] = None,
@@ -222,7 +224,7 @@ def visualize_feature_importance(models,
 
         importance = feature_extractor(clf)
         _df['feature_importance'] = np.array(importance).reshape(-1)
-        _df['column'] = columns
+        _df['column'] = columns if columns is not None else range(len(_df))
         _df['fold'] = i + 1
         importance_df = pd.concat([importance_df, _df], axis=0, ignore_index=True)
 
