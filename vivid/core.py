@@ -3,14 +3,11 @@
 """
 
 import dataclasses
-import gc
 import hashlib
-from collections import Counter
-from typing import Union, List, Optional
+from typing import Union, List
 
 import numpy as np
 import pandas as pd
-from sklearn.exceptions import NotFittedError
 
 from .backends.experiments import ExperimentBackend
 from .utils import get_logger
@@ -85,6 +82,7 @@ class SimpleEvaluation(AbstractEvaluation):
             'shape': env.output_df.shape,
             'parent_columns': env.parent_df.columns,
             'output_columns': env.output_df.columns,
+            'output_null': env.output_df.isnull().sum(),
             'memory_usage': env.output_df.memory_usage().sum()
         })
         env.experiment.save_object('parent_output_sample', env.parent_df.head(100))
@@ -115,7 +113,6 @@ class BaseBlock(object):
 
     # if set True, allow save to local.
     allow_save_local = True
-    _forward_cache_key = 'output'
     is_estimator = False
 
     def __init__(self,
@@ -197,7 +194,7 @@ class BaseBlock(object):
             return [self._parent]
         return self._parent
 
-    def _fit_core(self, source_df, y, experiment) -> pd.DataFrame:
+    def fit(self, source_df, y, experiment) -> pd.DataFrame:
         return self.transform(source_df)
 
     def transform(self, source_df):
@@ -213,7 +210,6 @@ class BaseBlock(object):
         Returns:
 
         """
-
         pass
 
     def unzip(self, experiment: ExperimentBackend):
@@ -228,88 +224,15 @@ class BaseBlock(object):
         """
         pass
 
+    def clear_fit_cache(self):
+        pass
+
     def show_network(self, depth=0, prefix=' |-', sep='**'):
         print(f'{sep * depth}{prefix}[{depth}] {self.name} <{self.runtime_env}>')
         if self.parent_blocks:
             for block in self.parent_blocks:
                 block.show_network(depth=depth + 1, prefix=prefix, sep=sep)
         return
-
-    def _save_cache(self, oof_df):
-        logger.debug('save to cache')
-        self._cache[self._forward_cache_key] = oof_df
-
-    def _load_cache(self):
-        self._refer_cache -= 1
-        logger.debug(f'{self.name}: remaining refer {self._refer_cache + 1} -> {self._refer_cache}')
-        out = self._cache.get(self._forward_cache_key, None)
-        if out is None:
-            raise ValueError('cant find cache data. ' + ','.join(self._cache.keys()) \
-                             + str(self._cache))
-        if self._refer_cache == 0:
-            logger.debug('clear cache : {}'.format(self.clear_cache()))
-        return out
-
-    @property
-    def _has_cache_output(self):
-        return self._cache.get(self._forward_cache_key, None) is not None
-
-    def _set_network(self):
-        nodes = set(self.all_network_blocks())
-
-        # calculate call counts on forward pass
-        all_parents = [x for b in nodes for x in b.parent_blocks]
-
-        self._refer_cache = 0
-        counts = Counter(all_parents)
-        for i, (block, call_count_i) in enumerate(counts.items()):
-            block._refer_cache = call_count_i - 1
-            logger.debug(f'{block.name} {call_count_i - 1}')
-
-        self._is_root_context = True
-        self._id = 0
-        for i, block in enumerate(sorted(counts, key=counts.get)):
-            block._id = i + 1
-            block._is_root_context = False
-
-    def clear_cache(self):
-        del self._cache
-        self._cache = {}
-        return gc.collect()
-
-    def clear_fit_cache(self):
-        """clear data using at fit method.
-        It is recommended that in fit method ,
-        """
-        pass
-
-    def fit(self,
-            input_df: pd.DataFrame,
-            y: np.ndarray = None,
-            experiment: Optional[ExperimentBackend] = None,
-            ignore_storage: bool = False,
-            root: bool = True) -> pd.DataFrame:
-        """
-        fit feature to input dataframe
-
-        Args:
-            input_df:
-                training dataframe.
-            y:
-                target value
-            experiment:
-                Experiment object. all objects which have to save are pass to the experiment.
-                    (commonly model weight, statistic score)
-            ignore_storage:
-                force re-fit call. If set `True`, ignore cache files stored at the experiment.
-            root:
-                regard as root node or not.
-
-        Returns:
-            features corresponding to the training data
-        """
-        return self._forward(input_df, y=y, experiment=experiment, ignore_storage=ignore_storage, root=root,
-                             is_fit_context=True)
 
     def report(self,
                source_df: pd.DataFrame,
@@ -330,11 +253,11 @@ class BaseBlock(object):
                 Note that it is this value that is passed to call. (Not `input_df`).
                 If you calculate the feature importance, usually use `output_df` instead of `input_df`.
             out_df:
-                dataframe created by me. the return value `._fit_core` method.
+                dataframe created by me. the return value `.fit` method.
             y:
                 target value.s
             experiment:
-                Experiment using at `._fit_core` method.
+                Experiment using at `.fit` method.
 
         Returns:
             Nothing
@@ -348,67 +271,10 @@ class BaseBlock(object):
                 import warnings
                 warnings.warn(str(e))
 
-    def predict(self,
-                input_df: pd.DataFrame,
-                experiment: Optional[ExperimentBackend] = None,
-                ignore_storage: bool = False,
-                root: bool = True) -> pd.DataFrame:
-        """
-        predict new data.
-
-        Notes:
-            This method has the ability to cache the return value and is applied when cache_on_test is true in config.
-            This is because the features are recursive in structure, preventing the calls from being recursively chained
-            in propagation from child to parent_blocks.
-
-            Therefore, even if you call `predict` once and then make a prediction on another data, the prediction result
-            is not changed. You must explicitly set the recreate argument to True in order to recreate it.
-
-        Args:
-            input_df:
-                predict target dataframe.
-            ignore_storage:
-                optional. If set as `True`, ignore cache file.
-                ignore cache means that it is guaranteed that the `transform` method will be called.
-
-        Returns:
-            predict data
-        """
-        return self._forward(input_df, None, experiment, root, ignore_storage, is_fit_context=False)
-
-    def _forward(self, input_df: pd.DataFrame, y: Union[None, np.ndarray],
-                 experiment: Optional[ExperimentBackend] = None, root: bool = False,
-                 ignore_storage: bool = False, is_fit_context: bool = False):
-        if experiment is None:
-            experiment = ExperimentBackend()
-
-        if not isinstance(input_df, pd.DataFrame):
-            raise ValueError('Invalid `input_df` passed at {}.'.format(self.runtime_env) + \
-                             'Must be pandas DataFrame object. Actually: {}'.format(type(input_df)))
-
-        if root:
-            # restart as none root
-            self._set_network()
-            self.clear_cache()
-            with experiment.as_environment(self.runtime_env) as exp:
-                return self._forward(input_df, y, exp, root=False, ignore_storage=ignore_storage,
-                                     is_fit_context=is_fit_context)
-
-        if self._has_cache_output:
-            logger.debug(f'{self.name} use cache prediction')
-            return self._load_cache()
-
-        out_df = self._create_or_load_output(input_df,
-                                             y=y,
-                                             experiment=experiment,
-                                             recreate=ignore_storage,
-                                             is_fit_context=is_fit_context)
-        logger.debug(f'{self.name} {self._refer_cache} after forwarding')
-        if self._refer_cache > 0 or self.is_estimator:
-            self._save_cache(out_df)
-        return out_df
-
-    def _load_output_from_storage(self, storage_key: str, experiment: ExperimentBackend, is_fit_context=False):
+    def load_output_from_storage(self,
+                                 storage_key: str,
+                                 experiment: ExperimentBackend,
+                                 is_fit_context=False) -> pd.DataFrame:
         if not experiment.has(storage_key):
             raise FileNotFoundError('{} is not found at experiment: {}'.format(storage_key, experiment))
 
@@ -424,71 +290,5 @@ class BaseBlock(object):
 
             # if there is a meta-file on experiment, load from experiment, not create
         experiment.logger.info('load from storage: {}'.format(storage_key))
-        out_df = experiment.load_object(storage_key)
-        return out_df
-
-    def _create_or_load_output(self,
-                               input_df,
-                               y,
-                               experiment,
-                               recreate,
-                               is_fit_context: bool = False) -> pd.DataFrame:
-        storage_key = 'train_oof' if is_fit_context else 'new_predict'
-
-        if not recreate:
-            try:
-                return self._load_output_from_storage(storage_key, experiment=experiment, is_fit_context=is_fit_context)
-            except FileNotFoundError:
-                pass
-
-        parent_out_df = self._prepare_parent_output(input_df, y, experiment, recreate,
-                                                    is_fit_context=is_fit_context)
-        if is_fit_context:
-            with experiment.mark_time('train'):
-                experiment.logger.info(f'start train {self.name}')
-                out_df = self._fit_core(source_df=parent_out_df, y=y, experiment=experiment)
-
-            check_block_fit_output(out_df, parent_out_df)
-            self.report(source_df=parent_out_df, y=y, out_df=out_df, experiment=experiment)
-
-            if experiment.can_save:
-                self.frozen(experiment)
-                self.clear_fit_cache()
-        else:
-            if experiment.can_save:
-                # run transform, store as local attribute
-                self.unzip(experiment)
-            if not self.check_is_fitted(experiment):
-                raise NotFittedError()
-            out_df = self.transform(parent_out_df)
-
-        experiment.save_as_python_object(storage_key, out_df)
-        del parent_out_df
-        gc.collect()
-        return out_df
-
-    def _prepare_parent_output(self,
-                               input_df: pd.DataFrame,
-                               y=None,
-                               experiment: ExperimentBackend = None,
-                               recreate: bool = False,
-                               is_fit_context=False) -> pd.DataFrame:
-        # prepare parent outputs
-        parent_out_df = pd.DataFrame()
-
-        # if no parent, use original input directly
-        if not self.has_parent:
-            return input_df
-
-        for b in self.parent_blocks:
-            with experiment.as_environment(b.runtime_env, style='flatten') as exp:
-                if is_fit_context:
-                    out_i = b.fit(input_df, y=y, experiment=exp, ignore_storage=recreate, root=False)
-                else:
-                    out_i = b.predict(input_df, exp, ignore_storage=recreate, root=False, )
-
-            # create a class for deal block name and features (dataclass, etc.)
-            out_i = out_i.add_prefix(b.name + '_')
-            parent_out_df = pd.concat([parent_out_df, out_i], axis=1)
-
-        return parent_out_df
+        output = experiment.load_object(storage_key)
+        return output
