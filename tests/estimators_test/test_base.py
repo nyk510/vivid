@@ -94,7 +94,7 @@ def test_custom_cv_class(cv, binary_data):
 
 
 def test_custom_cv_as_list():
-    """can set custom cv as list of _fit_core / test indexes"""
+    """can set custom cv as list of fit / test indexes"""
     cv = [
         [1, 2, 3], [4, 5],
         [2, 4, 5], [1, 3]

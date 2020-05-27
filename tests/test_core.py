@@ -22,7 +22,7 @@ class CounterBlock(BaseBlock):
         super(CounterBlock, self).__init__(**kwargs)
         self.counter = 0
 
-    def _fit_core(self, source_df, y, experiment) -> pd.DataFrame:
+    def fit(self, source_df, y, experiment) -> pd.DataFrame:
         self.counter += 1
         return source_df.copy()
 
@@ -47,7 +47,7 @@ def test_collect_parent():
 
 def test_invalid_fit_core_implement(regression_set):
     class A(BaseBlock):
-        def _fit_core(self, source_df, y, experiment) -> pd.DataFrame:
+        def fit(self, source_df, y, experiment) -> pd.DataFrame:
             return experiment
 
     a = A(name='a')
@@ -86,7 +86,7 @@ def test_re_fit():
     input_df2 = pd.DataFrame({'a': [1, 2, 2]})
 
     class Count(BaseBlock):
-        def _fit_core(self, source_df: pd.DataFrame, y, experiment) -> pd.DataFrame:
+        def fit(self, source_df: pd.DataFrame, y, experiment) -> pd.DataFrame:
             self.vc = source_df['a'].value_counts().to_dict()
             return self.transform(source_df)
 
