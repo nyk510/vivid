@@ -6,6 +6,7 @@ import dataclasses
 import hashlib
 from typing import Union, List
 
+import gc
 import numpy as np
 import pandas as pd
 
@@ -30,8 +31,9 @@ def network_hash(block: 'BaseBlock', size=8) -> str:
 
     """
     s = block._to_hash()
-    for b in block._all_parents():
-        s += b._to_hash()
+
+    for b in block.parent_blocks:
+        s += network_hash(b, size=size)
     return block.name + '__' + hashlib.sha1(s.encode('UTF-8')).hexdigest()[:size]
 
 
@@ -102,13 +104,11 @@ class BaseBlock(object):
     * fit: the learning phase, which the internal state is changed based on the input features
     * predict: the prediction phase, which creates a new feature based on the learned state.
 
-    In order to be consistent with the fit/predict conversions, both methods eventually call the call method.
-    If you want to create a new feature, override it.
+    It is not recommended to override the fit/predict method directly.
+    This is to be consistent with the conversion in fit/predict method.
 
-    It is not recommended to override the fit/predict method directly. This is to be consistent with the conversion
-    in fit/predict method. We believe that the difference between the code at the time of prediction execution and
-    the feature creation code in the learning phase is **the biggest cause of inconsistency** between the training and
-    prediction feature.
+    We believe that the difference between the code at the time of prediction execution and the feature creation code in
+    the learning phase is **the biggest cause of inconsistency** between the training and prediction feature.
     """
 
     # if set True, allow save to local.
@@ -151,7 +151,7 @@ class BaseBlock(object):
         describe the block uniquely as possible
 
         Returns:
-            almost unique block string
+            a String which is almost unique in blocks
         """
         return self.name
 
@@ -159,7 +159,17 @@ class BaseBlock(object):
     def runtime_env(self):
         return network_hash(self)
 
-    def check_is_fitted(self, experiment: ExperimentBackend):
+    def check_is_fitted(self, experiment: ExperimentBackend) -> bool:
+        """
+        whether this block is `fitted` (i.e. ready to predict new data)
+
+        Args:
+            experiment:
+                Current Experiment.
+
+        Returns:
+            boolean. return True, this block is ready to predict
+        """
         return True
 
     def all_network_blocks(self):
@@ -169,10 +179,7 @@ class BaseBlock(object):
         return retval
 
     def __repr__(self):
-        return '_'.join([self.name, *[str(m.name) for m in self.parent_blocks]])
-
-    def _all_parents(self) -> List['BaseBlock']:
-        return [x for b in self.parent_blocks for x in b._all_parents()] + self.parent_blocks
+        return self.__class__.__name__ + '__' + '_'.join([self.name, *[str(m.name) for m in self.parent_blocks]])
 
     @property
     def has_parent(self) -> bool:
@@ -194,10 +201,43 @@ class BaseBlock(object):
             return [self._parent]
         return self._parent
 
-    def fit(self, source_df, y, experiment) -> pd.DataFrame:
+    def fit(self,
+            source_df: pd.DataFrame,
+            y: Union[None, np.ndarray],
+            experiment: ExperimentBackend) -> pd.DataFrame:
+        """Converts the internal state to match the training data.
+
+        NOTE:
+            If you are only doing a transformation (e.g., one that does not depend on training data, such as min-max scaling),
+            do not do anything inside this function and implement the transformation logic in transform.
+            It is based on the idea that you want to use the same code for prediction and training transformations.
+
+        Args:
+            source_df:
+                source dataframe for fitting. pandas DataFrame object.
+            y: target numpy array.
+            experiment:
+                Current Experiment
+
+        Returns:
+            feature data that correspond to source feature.
+            In the case of machine learning models, the return value is an out of fold prediction.
+        """
+
         return self.transform(source_df)
 
-    def transform(self, source_df):
+    def transform(self, source_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        transform new data.
+
+        Args:
+            source_df:
+                input data frame. pandas dataframe object
+
+        Returns:
+            feature data that correspond to source feature.
+            In the case of machine learning models, the return value is prediction values.
+        """
         raise NotImplementedError()
 
     def frozen(self, experiment: ExperimentBackend):
@@ -205,12 +245,12 @@ class BaseBlock(object):
         save training information to the experiment.
 
         Args:
-            experiment:
+            experiment: Experiment Backend
 
         Returns:
 
         """
-        pass
+        return self
 
     def unzip(self, experiment: ExperimentBackend):
         """
@@ -222,10 +262,10 @@ class BaseBlock(object):
         Args:
             experiment: Experiment Backend
         """
-        pass
+        return self
 
     def clear_fit_cache(self):
-        pass
+        gc.collect()
 
     def show_network(self, depth=0, prefix=' |-', sep='**'):
         print(f'{sep * depth}{prefix}[{depth}] {self.name} <{self.runtime_env}>')
@@ -236,15 +276,13 @@ class BaseBlock(object):
 
     def report(self,
                source_df: pd.DataFrame,
-               y: np.ndarray,
                out_df: pd.DataFrame,
+               y: np.ndarray,
                experiment: ExperimentBackend = None):
         """
         a lifecycle method called after fit method.
         To ensure consistency of the output data frame format, the output data frame cannot be modified within this
-        function. Therefore, there is no return value.
-
-        If you want to make any changes, please change the call method.
+        function.
 
         Args:
             source_df:
@@ -253,9 +291,9 @@ class BaseBlock(object):
                 Note that it is this value that is passed to call. (Not `input_df`).
                 If you calculate the feature importance, usually use `output_df` instead of `input_df`.
             out_df:
-                dataframe created by me. the return value `.fit` method.
+                dataframe created by myself (i.e. the return value created by `.fit` method.)
             y:
-                target value.s
+                target
             experiment:
                 Experiment using at `.fit` method.
 
@@ -281,12 +319,11 @@ class BaseBlock(object):
         if is_fit_context:
             not_fit_blocks = not_fitted_blocks(self, experiment)
             if len(not_fit_blocks) > 0:
-                experiment.logger.info(
+                raise FileNotFoundError(
                     'Network has not fitted blocks. ' + ', '.join([b.name for b in not_fit_blocks]) + \
                     '. create these blocks and renew stored output features.')
-                raise FileNotFoundError()
 
-            experiment.logger.info('All Feature are ready to prediction. Load cache output.')
+            logger.info('All Feature are ready to prediction. Load cache output.')
 
             # if there is a meta-file on experiment, load from experiment, not create
         experiment.logger.info('load from storage: {}'.format(storage_key))
