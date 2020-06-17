@@ -54,9 +54,9 @@ class ScikitKerasMixin:
     Mixin Class adapt Keras model to scikit-learn api
     """
 
-    def fit(self: Union['ScikitKerasMixin', KerasClassifier], x, y, sample_weight=None, **kwargs):
+    def fit(self: Union['ScikitKerasMixin', KerasClassifier], x, y=None, sample_weight=None, **kwargs):
         self.sk_params['n_input'] = x.shape[1]
-        history = super(ScikitKerasMixin, self).fit(x, y, sample_weight=sample_weight, **kwargs)
+        history = super(ScikitKerasMixin, self).fit(x, y=y, sample_weight=sample_weight, **kwargs)
         self.history_ = history
         return self
 
