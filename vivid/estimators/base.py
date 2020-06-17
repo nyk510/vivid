@@ -11,104 +11,29 @@ from sklearn.exceptions import NotFittedError
 from sklearn.metrics import check_scoring
 from sklearn.metrics._scorer import _BaseScorer, SCORERS
 from sklearn.model_selection import check_cv
-from tabulate import tabulate
 
 from vivid.backends.experiments import ExperimentBackend
-from vivid.core import AbstractEvaluation, EvaluationEnv, BaseBlock, SimpleEvaluation
-from vivid.metrics import regression_metrics, binary_metrics
+from vivid.core import AbstractEvaluation, BaseBlock, SimpleEvaluation
 from vivid.sklearn_extend import PrePostProcessModel
 from vivid.utils import get_logger
-from vivid.visualize import NotSupportedError, visualize_feature_importance, visualize_distributions, \
-    visualize_pr_curve, visualize_roc_auc_curve
+from .evaluations import FeatureImportanceReport, MetricReport, curve_figure_reports
 
 logger = get_logger(__name__)
 
 
-class MetricReport(AbstractEvaluation):
-    """calculate predict score and logging
-
-    Notes:
-        when use this class, `feature_instance` expect `is_regression_model` attribute.
-        If instance does not have, skip calculation
-    """
-
-    def __init__(self, show_to_log=True):
-        self.show_to_log = show_to_log
-
-    def call(self, env: EvaluationEnv):
-        if not env.block.is_estimator:
-            return
-
-        if not hasattr(env.block, 'is_regression_model'):
-            return
-
-        y = env.y
-        oof = env.output_df.values[:, 0]
-        experiment = env.experiment
-
-        if env.block.is_regression_model:
-            score = regression_metrics(y, oof)
-        else:
-            score = binary_metrics(y, oof)
-        experiment.mark('train_metrics', score)
-
-        if not self.show_to_log:
-            return
-        s_metric = tabulate([score], headers='keys', tablefmt='github')
-        for l in s_metric.split('\n'):
-            experiment.logger.info(l)
-
-
-class FeatureImportanceReport(AbstractEvaluation):
-    """plot feature importance report"""
-
-    def __init__(self, n_importance_plot=50):
-        super(FeatureImportanceReport, self).__init__()
-        self.n_importance_plot = n_importance_plot
-
-    def call(self, env: EvaluationEnv):
-        if not isinstance(env.block, MetaBlock):
-            return
-
-        try:
-            env.experiment.logger.debug('start plot importance')
-            fig, ax, importance_df = visualize_feature_importance(env.block._fitted_models,
-                                                                  columns=env.parent_df.columns,
-                                                                  top_n=self.n_importance_plot,
-                                                                  plot_type='boxen')
-        except NotSupportedError:
-            env.experiment.logger.debug(f'class {env.block.model_class} is not supported for feature importance.')
-            return
-
-        env.experiment.save_figure('importance', fig)
-        env.experiment.save_dataframe('importance', importance_df)
-
-
-class CurveFigureReport(AbstractEvaluation):
-    def __init__(self, visualizer: Union[None, Callable] = visualize_distributions, name=None):
-        super(CurveFigureReport, self).__init__()
-        self.visualizer = visualizer
-        self.name = name
-
-    def call(self, env: EvaluationEnv):
-        if env.block.is_regression_model:
-            return
-        fig, ax = self.visualizer(y_true=env.y, y_pred=env.output_df.values[:, 0], )
-        env.experiment.save_figure(self.name, fig=fig)
-
-
-def curve_figure_block():
-    visualizers = [
-        visualize_roc_auc_curve,
-        visualize_distributions,
-        visualize_pr_curve
-    ]
-
-    return [CurveFigureReport(v, name=v.__name__.replace('visualize_', '')) for v in visualizers]
-
-
 class EstimatorMixin:
     is_estimator = True
+
+
+def _get_default_model_evaluations(evaluations: Union[None, List[AbstractEvaluation]]):
+    if isinstance(evaluations, list):
+        return evaluations
+    return [
+        FeatureImportanceReport(),
+        MetricReport(),
+        *curve_figure_reports(),
+        SimpleEvaluation()
+    ]
 
 
 class MetaBlock(EstimatorMixin, BaseBlock):
@@ -123,14 +48,22 @@ class MetaBlock(EstimatorMixin, BaseBlock):
     initial_params = {}
     model_class = None
 
-    def __init__(self, name, parent=None, cv=None, groups=None, add_init_param=None,
-                 sample_weight=None, evaluations=None):
+    def __init__(self,
+                 name,
+                 parent=None,
+                 cv=None,
+                 groups=None,
+                 add_init_param: Union[None, dict] = None,
+                 sample_weight=None,
+                 evaluations: Union[None, List[AbstractEvaluation]] = None):
         """
-
         Args:
-            name: Model name. Recommended to use a unique string throughout the same project.
-            parent: parent_blocks feature instance.
-            cv: Kfold instance or Number or Iterable or None.
+            name:
+                Model name. Recommended to use a unique string throughout the same project.
+            parent:
+                parent_blocks feature instance.
+            cv:
+                Kfold instance or Number or Iterable or None.
                 If Set None, use default_loader cv strategy.
             groups:
                 Groups which use in group-k-fold
@@ -138,7 +71,11 @@ class MetaBlock(EstimatorMixin, BaseBlock):
             sample_weight:
                 sample weight. shape = (n_train,)
             add_init_param:
-                additional init params. class attribute `init_params` are updated by it.
+                additional init params (None or dict).
+                class attribute `init_params` are updated by it and pass to `model_class` constructor.
+            evaluations:
+                List of AbstractEvaluation subclass or None.
+                学習 (fit) が終了したあと, このメソッドが EvaluationEnv を引数として呼び出されます.
         """
 
         self.cv = cv
@@ -148,15 +85,7 @@ class MetaBlock(EstimatorMixin, BaseBlock):
         if add_init_param:
             self._initial_params.update(add_init_param)
 
-        if evaluations is None:
-            evaluations = [
-                FeatureImportanceReport(),
-                MetricReport(),
-                *curve_figure_block(),
-                SimpleEvaluation()
-            ]
-
-        super(MetaBlock, self).__init__(name, parent, evaluations=evaluations)
+        super(MetaBlock, self).__init__(name, parent, evaluations=_get_default_model_evaluations(evaluations))
 
     def _to_hash(self) -> str:
         s = super(MetaBlock, self)._to_hash()
@@ -172,29 +101,50 @@ class MetaBlock(EstimatorMixin, BaseBlock):
         return s
 
     @property
-    def is_regression_model(self):
+    def is_regression_model(self) -> bool:
         """whether the `model_class` instance is regression model or Not"""
         return is_regressor(self.model_class())
 
-    def check_is_fitted(self, experiment: ExperimentBackend):
-        if hasattr(self, '_fitted_models'):
-            return True
+    def _check_has_fitted_models(self) -> bool:
+        return hasattr(self, '_fitted_models')
 
+    def _check_has_models_in_exp(self, experiment: ExperimentBackend) -> bool:
         try:
             output_dirs = experiment.get_marked().get('cv_dirs', None)
         except (FileNotFoundError, AttributeError):
             return False
         return output_dirs is not None
 
+    def check_is_fitted(self, experiment: ExperimentBackend) -> bool:
+        """学習済み (i.e. fit が呼び出されたかどうか) を判定します.
+        experiment に学習済みモデルが保存されている場合には True を返します.
+        """
+        if self._check_has_fitted_models():
+            return True
+
+        return self._check_has_models_in_exp(experiment)
+
     def clear_fit_cache(self):
         del self._fitted_models
         import gc
         logger.info('[{}] clear cache models {}'.format(self.name, gc.collect()))
+        super(MetaBlock, self).clear_fit_cache()
 
     def _get_fold_dir(self, current_cv: int):
         return f'cv={current_cv:02d}'
 
-    def frozen(self, experiment: ExperimentBackend):
+    def frozen(self, experiment: ExperimentBackend) -> 'MetaBlock':
+        """
+        save fitted models to the experiment
+
+        Args:
+            experiment:
+                保存する対象となる environment
+        Returns:
+            myself
+        """
+        if not self._check_has_fitted_models():
+            raise NotFittedError()
         dir_names = [self._get_fold_dir(i) for i in range(len(self._fitted_models))]
         for name, model in zip(dir_names, self._fitted_models):
             with experiment.as_environment(name, style='nested') as fold_env:
@@ -202,12 +152,28 @@ class MetaBlock(EstimatorMixin, BaseBlock):
         experiment.mark('cv_dirs', dir_names)
         return self
 
-    def unzip(self, experiment: ExperimentBackend):
-        """load fitted models from local model parameters."""
+    def unzip(self, experiment: ExperimentBackend) -> 'MetaBlock':
+        """load fitting models from experiment.
+
+        Raises:
+            NotFittedError
+                there is no `cv_dirs` in marked object.
+                fit が呼ばれた段階で, MetaBlock class は cv_dirs に cv ごとのディレクトリを保存しています.
+                これが参照できない場合 fit が呼ばれていないと判断して `NotFittedError` を送出します
+
+        Args:
+            experiment:
+                読み込み対象の experiment
+
+        Returns:
+            myself
+        """
+        if not self._check_has_models_in_exp(experiment):
+            raise NotFittedError('`cv_dirs` is not found in marked object. Must be call fit before `unzip`.')
         mark = experiment.get_marked()
         output_dirs = mark.get('cv_dirs', None)  # type: List[str]
         if output_dirs is None:
-            raise NotFittedError()
+            raise NotFittedError('`cv_dirs` is not found in marked object. Must be call fit before `unzip`.')
 
         models = []
         for out_dir in output_dirs:
@@ -596,7 +562,7 @@ class TunerBlock(MetaBlock):
         with experiment.silent():
             objective = lambda trial: self.get_objective(trial, X, y, experiment)
             # Stop model logging while optuna optimization
-            with experiment.mark_time('optuna_'):
+            with experiment.mark_time('optuna_tuning'):
                 self.study.optimize(objective, n_trials=self.n_trails, n_jobs=self.optuna_jobs)
 
         experiment.logger.info('best trial params: {}'.format(self.study.best_params))
@@ -615,11 +581,29 @@ class TunerBlock(MetaBlock):
 
 class EnsembleBlock(EstimatorMixin, BaseBlock):
 
-    def __init__(self, name, agg='mean', **kwargs):
-        name = f'{name}_{agg}'
-        super(EnsembleBlock, self).__init__(name=name, **kwargs)
+    def __init__(self,
+                 prefix,
+                 agg='mean',
+                 evaluations=None,
+                 **kwargs):
+        """
+        Args:
+            prefix:
+                this blocks prefix.
+                The final name will be `<prefix>_<agg>`.
+            agg:
+                aggregation method name.
+                it must be able to pass as a first argument to pandas.DataFrame.agg function.
+            evaluations:
+                Abstract Evaluation Functions (or None).
+                If set None, use default evaluations (see `_get_default_model_evaluations` definition)
+            **kwargs:
+                pass to BaseBlock
+        """
+        super(EnsembleBlock, self).__init__(name='{}_{}'.format(prefix, agg),
+                                            evaluations=_get_default_model_evaluations(evaluations),
+                                            **kwargs)
         self.agg = agg
-
         if len(self.parent_blocks) == 0:
             raise ValueError('Ensemble model must have parent blocks. ')
 
