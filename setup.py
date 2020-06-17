@@ -26,10 +26,11 @@ def get_install_requires():
         'pandas',
         'joblib',
         'optuna',
-        'xgboost',
+        'xgboost<=1.0.2',
         'lightgbm',
         'feather-format',
-        'tabulate'
+        'tabulate',
+        'networkx'
     ]
     return install_requires
 
