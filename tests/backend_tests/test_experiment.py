@@ -13,7 +13,7 @@ def test_can_call_method(backend: ExperimentBackend):
     backend.save_object('foo', {})
     backend.save_as_python_object('foo', {})
 
-    assert not backend.can_save, backend.namespace
+    assert not backend.can_save, backend.to
     assert backend.get_marked() is None
 
 

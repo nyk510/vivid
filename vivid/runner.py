@@ -1,5 +1,6 @@
 """block runner"""
 from dataclasses import dataclass
+from datetime import datetime
 from typing import List, Union
 
 import gc
@@ -7,6 +8,7 @@ import networkx as nx
 import pandas as pd
 from sklearn.exceptions import NotFittedError
 
+from vivid.setup import setup_project
 from .backends.experiments import LocalExperimentBackend, ExperimentBackend
 from .core import BaseBlock
 from .utils import get_logger, timer
@@ -76,7 +78,7 @@ def sort_blocks(blocks: List[BaseBlock]):
 
 @dataclass
 class EstimatorResult:
-    oof_df: pd.DataFrame
+    out_df: pd.DataFrame
     block: BaseBlock
 
 
@@ -109,12 +111,16 @@ def create_source_df(block, input_df, output_caches, experiment, storage_key, is
 class Task:
     order_index: int
     block: BaseBlock
+    experiment: LocalExperimentBackend
     run_fit: bool = False
     completed: bool = False
 
+    def storage_key(self, is_fit_context: bool):
+        return 'train_output' if is_fit_context else 'test_output'
+
     def __str__(self):
         return f'- {self.order_index:02d} {_to_check(self.completed)} {_to_check(self.run_fit)} {self.block.name}' + \
-               ' | parents ' + ' / '.join(map(str, self.block.parent_blocks))
+               ' | ' + ' / '.join(map(str, self.block.parent_blocks))
 
     def changed_blocks_in_parents(self, tasks: List['Task']) -> List[BaseBlock]:
         retval = []
@@ -130,14 +136,14 @@ class Task:
             input_df,
             y,
             is_fit_context,
-            experiment: LocalExperimentBackend,
             ignore_cache,
             output_caches):
 
-        storage_key = 'train_output' if is_fit_context else 'test_output'
         block = self.block
+        storage_key = self.storage_key(is_fit_context)
+
         if is_fit_context:
-            with experiment.as_environment(block.runtime_env) as exp:
+            with self.experiment.as_environment(block.runtime_env) as exp:
                 if block.check_is_fitted(exp) and exp.has(storage_key):
                     if not ignore_cache:
                         logger.info(
@@ -148,10 +154,14 @@ class Task:
 
                     logger.debug('already exist trained files, but ignore these files. retrain')
 
-        source_df = create_source_df(self.block, input_df, output_caches=output_caches, experiment=experiment,
-                                     storage_key=storage_key, is_fit_context=is_fit_context)
+        source_df = create_source_df(self.block,
+                                     input_df,
+                                     output_caches=output_caches,
+                                     experiment=self.experiment,
+                                     storage_key=storage_key,
+                                     is_fit_context=is_fit_context)
 
-        with experiment.as_environment(block.runtime_env) as exp:
+        with self.experiment.as_environment(block.runtime_env) as exp:
             if is_fit_context:
                 with exp.mark_time('fit'):
                     out_df = execute_fit(block, source_df, y, exp)
@@ -167,8 +177,28 @@ class Task:
         gc.collect()
         return out_df
 
+    def load_output(self, is_fit_context: bool):
+        """block の出力を取り出すための method
+        """
+        key = self.storage_key(is_fit_context)
+        with self.experiment.as_environment(self.block.runtime_env) as exp:
+            obj = self.block.load_output_from_storage(storage_key=key,
+                                                      experiment=exp,
+                                                      is_fit_context=is_fit_context)
+            return obj
+
 
 class Runner:
+    """
+    Manager class for fit or predict blocks.
+
+    ### Features
+
+    1. order blocks by the dependency so the fit (or transform) method is called only once.
+    2. Caches the features once called (unused options available)
+
+    """
+
     def __init__(self, blocks: Union[BaseBlock, List[BaseBlock]], experiment=None):
         if isinstance(blocks, BaseBlock):
             blocks = [blocks]
@@ -176,19 +206,21 @@ class Runner:
         self.blocks = blocks
 
         if experiment is None:
-            experiment = LocalExperimentBackend()
+            import os
+            cache = setup_project().cache
+            experiment = LocalExperimentBackend(to=os.path.join(cache, 'run__' + str(datetime.now())))
         self.experiment = experiment
+        self.tasks = None
 
     def fit(self,
             train_df,
             y=None,
             cache: bool = True,
-            ignore_past_log=False):
+            ignore_past_log=False) -> List[EstimatorResult]:
 
         estimator_predicts = self._run(
             input_df=train_df,
             y=y,
-            experiment=self.experiment,
             cache=cache,
             ignore_cache=ignore_past_log,
             is_fit_context=True,
@@ -196,46 +228,49 @@ class Runner:
 
         oof_df = pd.DataFrame()
         for p in estimator_predicts:
-            oof_df[p.block.runtime_env] = p.oof_df.values[:, 0]
+            oof_df[p.block.runtime_env] = p.out_df.values[:, 0]
         self.experiment.save_dataframe('out_of_folds', oof_df)
         return estimator_predicts
 
     def predict(self,
                 input_df,
-                cache: bool = True):
+                cache: bool = True) -> List[EstimatorResult]:
         estimator_predicts = self._run(
             input_df=input_df,
             y=None,
-            experiment=self.experiment,
             cache=cache,
             is_fit_context=False
         )
 
         return estimator_predicts
 
+    def _initialize(self):
+        blocks = list(sort_blocks(self.blocks))
+        self.tasks = [Task(i + 1, b, experiment=self.experiment) for i, b in enumerate(blocks)]
+
     def _run(self,
              input_df,
              y,
-             experiment: LocalExperimentBackend = None,
              is_fit_context=False,
              cache=True,
              ignore_cache=False) -> List[EstimatorResult]:
-        blocks = list(sort_blocks(self.blocks))
         output_caches = {}
         estimator_predicts = []
-        tasks = [Task(i + 1, b) for i, b in enumerate(blocks)]
 
-        self.show_tasks(tasks)
+        self._initialize()
+        self.show_tasks(self.tasks, is_fit_context)
 
-        for i, task in enumerate(tasks):
+        for i, task in enumerate(self.tasks):
 
-            changed_blocks = task.changed_blocks_in_parents(tasks)
+            changed_blocks = task.changed_blocks_in_parents(self.tasks)
             if len(changed_blocks) > 0:
                 logger.info('related blocks has changed. so run ignore cache context. / ' +
                             ','.join(map(str, changed_blocks)))
 
             with timer(logger, prefix=task.block.name + ' '):
-                out_df = task.run(input_df=input_df, y=y, is_fit_context=is_fit_context, experiment=experiment,
+                out_df = task.run(input_df=input_df,
+                                  y=y,
+                                  is_fit_context=is_fit_context,
                                   ignore_cache=ignore_cache or len(changed_blocks) > 0,
                                   output_caches=output_caches)
 
@@ -243,17 +278,30 @@ class Runner:
                 output_caches[task.block.runtime_env] = out_df
 
             if task.block.is_estimator:
-                estimator_predicts += [EstimatorResult(oof_df=out_df, block=task.block)]
+                estimator_predicts += [EstimatorResult(out_df=out_df, block=task.block)]
 
-        self.show_tasks(tasks)
+        self.show_tasks(self.tasks, is_fit_context)
 
         return estimator_predicts
 
-    def show_tasks(self, tasks):
+    def show_tasks(self, tasks, is_fit_context=False):
+        context = 'train' if is_fit_context else 'test'
         logger.info('=' * 40)
-        logger.info('> task status')
+        logger.info('@{} / task list'.format(context))
         for task in tasks:
             logger.info(str(task))
+
+    def load_output(self, block, is_fit_context=False):
+        filtered = list(filter(lambda x: x.block == block, self.tasks))
+        if len(filtered) == 0:
+            raise ValueError('block {} is not defined'.format(block))
+
+        if len(filtered) > 1:
+            import warnings
+            warnings.warn('duplicate tasks are registered. (tasks expect unique by block.)')
+            warnings.warn('use first matched block {}'.format(filtered[0]))
+
+        return filtered[0].load_output(is_fit_context=is_fit_context)
 
 
 def create_runner(blocks, experiment=None) -> Runner:

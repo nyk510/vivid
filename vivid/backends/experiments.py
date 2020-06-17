@@ -5,7 +5,7 @@ import warnings
 from contextlib import contextmanager
 from datetime import datetime
 from typing import ContextManager
-from typing import Union
+from typing import Union, List
 
 import joblib
 import matplotlib.pyplot as plt
@@ -19,14 +19,15 @@ from vivid.utils import get_logger
 class ExperimentBackend:
     """base class for all experiment backends"""
 
-    def __init__(self, namespace=None, keys=None, logger=None, datafame_backend=None):
-        self.namespace = namespace
+    def __init__(self,
+                 to=None,
+                 keys: Union[List[str], None] = None,
+                 logger=None,
+                 datafame_backend=None):
+        self.to = to
         self.keys = [] if keys is None else keys
         self.logger = get_logger(__name__)
         self.dataframe_backend = get_dataframe_backend() if datafame_backend is None else datafame_backend
-
-    def initialize_logger(self):
-        pass
 
     def __enter__(self):
         self.start()
@@ -43,7 +44,7 @@ class ExperimentBackend:
 
     @property
     def can_save(self):
-        return self.namespace is not None
+        return self.to is not None
 
     def save_object(self, key, obj):
         mapping = {
@@ -108,11 +109,11 @@ class ExperimentBackend:
 
     @contextmanager
     def silent(self):
-        _tmp = self.namespace
-        self.namespace = None
+        _tmp = self.to
+        self.to = None
         self.logger.disabled = True
         yield self
-        self.namespace = _tmp
+        self.to = _tmp
         self.logger.disabled = False
 
     def clear(self):
@@ -137,36 +138,43 @@ def as_safety(func):
 
     def inner(self: 'ExperimentBackend', *args, **kwargs):
         if not self.can_save:
+            self.logger.info('cant allow save. skip call.')
             return None
         return func(self, *args, **kwargs)
 
     return inner
 
 
+def get_logger_name(to, keys: List[str]):
+    prepends = []
+    if to:
+        prepends += [os.path.basename(to)]
+    else:
+        prepends += [__name__]
+    prepends += map(str, keys)
+    logger_name = '/'.join(prepends)
+    return logger_name
+
+
 class LocalExperimentBackend(ExperimentBackend):
     """save object to local storage backend"""
 
-    def __init__(self, namespace=None, mark_filename='metrics.json', **kwargs):
-        if namespace is not None:
-            namespace = os.path.abspath(namespace)
-        super(LocalExperimentBackend, self).__init__(namespace, **kwargs)
+    def __init__(self, to=None, mark_filename='metrics.json', **kwargs):
+        if to is not None:
+            to = os.path.abspath(to)
+        super(LocalExperimentBackend, self).__init__(to, **kwargs)
 
         self.mark_filename = mark_filename
 
-        prepends = []
-        if namespace:
-            prepends += [os.path.basename(namespace)]
-        else:
-            prepends += [__name__]
-        prepends += map(str, self.keys)
-        logger_name = '/'.join(prepends)
         if self.can_save:
             os.makedirs(self.output_dir, exist_ok=True)
 
+        logger_name = get_logger_name(to, keys=self.keys)
         self.logger = get_logger(name=logger_name,
                                  output_file=self.logging_path,
                                  format_str='%(name)-30s: %(levelname)-8s %(message)s')
-        self.logger.debug('switch to {}'.format(self.output_dir))
+        self.logger.debug('experiment output is {}'.format(self.output_dir))
+        self.logger.debug('logger name: {}'.format(logger_name))
 
     @property
     def logging_path(self):
@@ -177,7 +185,7 @@ class LocalExperimentBackend(ExperimentBackend):
 
     @property
     def metric_path(self):
-        if self.namespace is not None:
+        if self.to is not None:
             return os.path.join(self.output_dir, self.mark_filename)
         return None
 
@@ -191,11 +199,11 @@ class LocalExperimentBackend(ExperimentBackend):
     @property
     def output_dir(self):
         """exact output directory"""
-        if self.namespace is None:
+        if self.to is None:
             return None
         if self.keys is None:
-            return self.namespace
-        return os.path.join(self.namespace, *self.keys)
+            return self.to
+        return os.path.join(self.to, *self.keys)
 
     @as_safety
     def get_marked(self):
@@ -228,8 +236,8 @@ class LocalExperimentBackend(ExperimentBackend):
             json.dump(obj, f, cls=NestedEncoder, indent=4)
 
     @as_safety
-    def save_dataframe(self, key, df: pd.DataFrame):
-        df.to_csv(self._to_path(key, 'csv'))
+    def save_dataframe(self, key, df: pd.DataFrame, **kwargs):
+        df.to_csv(self._to_path(key, 'csv'), **kwargs)
 
     @as_safety
     def save_figure(self, key, fig: plt.Figure):
@@ -251,10 +259,9 @@ class LocalExperimentBackend(ExperimentBackend):
         shutil.rmtree(self.output_dir)
 
     @contextmanager
-    def as_environment(self, *keys, style='nested') -> ContextManager['ExperimentBackend']:
+    def as_environment(self, *keys, style='nested') -> ContextManager['LocalExperimentBackend']:
         """
         change environment to the keys and yield return myself
-
 
         Args:
             keys:
@@ -262,10 +269,13 @@ class LocalExperimentBackend(ExperimentBackend):
         """
         if style == 'flatten':
             keys = list(keys)
-        else:
+        elif style == 'nested':
             keys = self.keys + list(keys)
+        else:
+            raise ValueError('style is must be {}. Actually, {}'.format(','.join(['flatten', 'nested']),
+                                                                        style))
 
-        children = LocalExperimentBackend(namespace=self.namespace,
+        children = LocalExperimentBackend(to=self.to,
                                           mark_filename=self.mark_filename,
                                           keys=keys,
                                           datafame_backend=self.dataframe_backend)
