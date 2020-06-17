@@ -3,9 +3,9 @@ from sklearn.model_selection import StratifiedKFold
 from sklearn.utils import _deprecate_positional_args
 
 
-class StratifiedGroupKFold(StratifiedKFold):
+class ContinuousStratifiedFold(StratifiedKFold):
     """
-    Stratified Group-K-Fold Splits
+    stratified-K-Fold Splits for continuous target.
     """
 
     @_deprecate_positional_args
@@ -16,4 +16,4 @@ class StratifiedGroupKFold(StratifiedKFold):
 
     def split(self, X, y, groups=None):
         y_cat = pd.qcut(y, q=self.q).codes
-        return super(StratifiedGroupKFold, self).split(X, y_cat, groups=groups)
+        return super(ContinuousStratifiedFold, self).split(X, y_cat, groups=groups)
