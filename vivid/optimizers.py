@@ -26,7 +26,7 @@ class BinsOptimizer:
         Args:
             objective:
                 the objective function. The function should return a number
-                with y_true and a discretized predicted value as input.
+                with y_true and a discredited predicted value as input.
             bins:
                 threshold values. This is the initial value of the optimization solver.
             minimize:
