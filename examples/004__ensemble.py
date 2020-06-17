@@ -10,7 +10,7 @@ from vivid.estimators.ensumble import RFRegressorBlock
 from vivid.estimators.linear import TunedRidgeBlock
 from vivid.estimators.neural_network import KerasRegressorBlock
 from vivid.estimators.svm import SVRBlock
-from vivid.features.blocks import BinningCountBlock, FilterBlock
+from vivid.features.base import BinningCountBlock, FilterBlock
 
 
 class SumBlock(BaseBlock):
@@ -46,8 +46,8 @@ if __name__ == '__main__':
     X, y = load_boston(return_X_y=True)
     train_df = pd.DataFrame(X)
 
-    experiment = LocalExperimentBackend(namespace='./outputs/ensemble')
+    experiment = LocalExperimentBackend(to='./outputs/ensemble')
 
     stacked_runner = Runner(blocks=stacked_stack, experiment=experiment)
-    stacked_runner.fit(train_df, y)
+    stacked_runner.fit(train_df, y, ignore_past_log=False)
     stacked_runner.predict(train_df)

@@ -5,7 +5,7 @@ from vivid import Runner
 from vivid.backends.experiments import LocalExperimentBackend
 from vivid.core import BaseBlock
 from vivid.estimators.boosting import XGBRegressorBlock
-from vivid.features.blocks import BinningCountBlock
+from vivid.features.base import BinningCountBlock
 
 
 class SumBlock(BaseBlock):
@@ -23,7 +23,7 @@ class CopyBlock(BaseBlock):
 if __name__ == '__main__':
     features = [
         CopyBlock(name='copy'),
-        BinningCountBlock('bin', column=0),
+        BinningCountBlock('bin', column=[0]),
         SumBlock(name='sum')
     ]
 
@@ -32,6 +32,7 @@ if __name__ == '__main__':
     X, y = load_boston(return_X_y=True)
     train_df = pd.DataFrame(X)
 
-    runner = Runner(xgb, experiment=LocalExperimentBackend(namespace='./outputs/feature_engineering'))
+    runner = Runner(xgb,
+                    experiment=LocalExperimentBackend(to='./outputs/feature_engineering'))
     runner.fit(train_df, y, ignore_past_log=True)
     runner.predict(train_df)

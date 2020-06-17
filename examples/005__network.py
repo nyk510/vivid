@@ -25,7 +25,7 @@ if __name__ == '__main__':
 
     g = TestBlock('g', parent=[f, e, a, c, d])
 
-    exp = LocalExperimentBackend(namespace='./outputs/test')
+    exp = LocalExperimentBackend(to='./outputs/test')
     input_df = pd.DataFrame()
 
     runner = create_runner(g, experiment=exp)
