@@ -3,6 +3,7 @@ import pandas as pd
 import pytest
 from sklearn.datasets import load_boston, load_breast_cancer
 
+from vivid.backends import ExperimentBackend
 from vivid.core import BaseBlock
 from vivid.env import Settings
 
@@ -25,6 +26,11 @@ def regression_data() -> [pd.DataFrame, np.ndarray]:
 def binary_data() -> [pd.DataFrame, np.ndarray]:
     x, y = load_breast_cancer(True)
     return pd.DataFrame(x), y
+
+
+@pytest.fixture
+def experiment():
+    return ExperimentBackend()
 
 
 class TestBlock(BaseBlock):

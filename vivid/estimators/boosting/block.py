@@ -46,6 +46,6 @@ def create_boosting_seed_blocks(feature_class: Type[MetaBlock],
                                    add_init_param=add_param,
                                    **init_params))
 
-    ensemble_feat = EnsembleBlock(parent=feats[:], name=f'{prefix}_ensemble')
+    ensemble_feat = EnsembleBlock(parent=feats[:], prefix=f'{prefix}_ensemble')
 
     return ensemble_feat

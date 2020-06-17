@@ -1,6 +1,5 @@
 import numpy as np
 import pytest
-from sklearn.exceptions import NotFittedError
 from sklearn.metrics import make_scorer
 from sklearn.metrics import mean_absolute_error, mean_squared_log_error
 from sklearn.model_selection import KFold, StratifiedKFold
@@ -10,74 +9,16 @@ from vivid.estimators.ensumble import RFRegressorBlock
 from vivid.estimators.kneighbor import TunedKNNRegressorBlock
 
 
-def test_serializing(regression_data):
-    feat_none_save = TunedKNNRegressorBlock(name='serialize_0', n_trials=1)
-    feat_none_save.fit(*regression_data)
-
-    with pytest.raises(NotFittedError):
-        feat_none_save.load_best_models()
-
-
-# def test_not_recoding(regression_data):
-#     df, y = regression_data
-#     feat_not_recoding_root = TunedKNNRegressorBlock(parent=base_feat, name='not_save_parent', n_trials=1)
-#     feat_not_recoding_root.fit(df, y)
-#     with pytest.raises(NotFittedError):
-#         feat_not_recoding_root.load_best_models()
-#
-
-def test_use_cache(regression_data):
-    df, y = regression_data
-    feat = TunedKNNRegressorBlock(parent=None, name='knn', n_trials=1)
-
-    output_df = feat.fit(df, y)
-    assert feat.feat_on_train_df is not None
-    output_repeat_df = feat.fit(df, y)
-
-    assert output_df is output_repeat_df, feat
-
-
-# @pytest.mark.parametrize('model_class', [boosting.XGBRegressorBlock, boosting.XGBClassifierBlock])
-# def test_recording(model_class: Type[MetaBlock], regression_data, binary_data):
-#     recording_feature = RecordingFeature()
-#     clf = model_class(parent=recording_feature, name='serialize_1')
-#
-#     with pytest.raises(NotFittedError):
-#         clf.load_best_models()
-#
-#     # 学習前なのでモデルの重みはあってはならない
-#     assert not os.path.exists(clf.model_param_path), clf
-#
-#     if clf.is_regression_model:
-#         df, y = regression_data
-#     else:
-#         df, y = binary_data
-#     clf.fit(df, y)
-#
-#     assert clf.is_recording, clf
-#     assert clf.is_train_finished, clf
-#
-#     # 学習後なのでモデルの重みが無いとだめ
-#     assert os.path.exists(clf.model_param_path), clf
-#
-#     # モデル読み込みと予測が可能
-#     clf.load_best_models()
-#     pred1 = clf.predict(df)
-#
-#     # 再度定義しなおしても推論は可能 (ローカルからモデルを呼び出して来ることができる)
-#     clf = model_class(parent=recording_feature, name='serialize_1')
-#     pred2 = clf.predict(df)
-#     assert pred1.equals(pred2), (pred1, pred2)
-
-
-def test_add_sample_weight(regression_data):
+def test_add_sample_weight(regression_data, experiment):
     df, y = regression_data
     sample_weight = df.values[:, 0]
-    model = RFRegressorBlock(name='rf', sample_weight=sample_weight)
-    model.fit(df, y)
+    model = RFRegressorBlock(name='rf',
+                             sample_weight=sample_weight)
+    model.fit(df, y, experiment)
 
     for clf, (idx_train, idx_valid) in zip(model._fitted_models, model.get_fold_splitting(df.values, y)):
-        assert np.array_equal(clf.fit_params_.get('sample_weight', None), sample_weight[idx_train])
+        params = clf.fit_params_
+        assert np.array_equal(params.get('sample_weight', None), sample_weight[idx_train])
 
 
 @pytest.mark.parametrize('cv', [
@@ -96,8 +37,8 @@ def test_custom_cv_class(cv, binary_data):
 def test_custom_cv_as_list():
     """can set custom cv as list of fit / test indexes"""
     cv = [
-        [1, 2, 3], [4, 5],
-        [2, 4, 5], [1, 3]
+        [[1, 2, 3], [4, 5]],
+        [[2, 4, 5], [1, 3]]
     ]
     clf = boosting.XGBClassifierBlock(name='xgb', cv=cv)
 
@@ -125,14 +66,14 @@ def test_short_n_fold(regression_data, n_folds, expected):
     assert len(fitted_models) == expected
 
 
-def test_updated_model_parameters_add_init_params(regression_data):
+def test_updated_model_parameters_add_init_params(regression_data, experiment):
     add_params = {
         'n_estimators': 1,
         'colsample_bytree': .9
     }
     model = boosting.XGBRegressorBlock(name='xgb', add_init_param=add_params)
     input_df, y = regression_data
-    model.fit(input_df, y)
+    model.fit(input_df, y, experiment)
 
     for m in model._fitted_models:
         for key, value in add_params.items():
@@ -143,12 +84,12 @@ def test_updated_model_parameters_add_init_params(regression_data):
     mean_absolute_error,
     mean_squared_log_error
 ])
-def test_optuna_change_metric(metric_func, regression_data):
+def test_optuna_change_metric(metric_func, regression_data, experiment):
     df, y = regression_data
     scoring = make_scorer(metric_func, greater_is_better=False)
     model = TunedKNNRegressorBlock(name='optuna', n_trials=1, scoring=scoring,
                                    scoring_strategy='fold')
-    model.fit(df, y)
+    model.fit(df, y, experiment)
 
     X = df.values
     scores = []
@@ -160,31 +101,31 @@ def test_optuna_change_metric(metric_func, regression_data):
     np.testing.assert_almost_equal(-score, model.study.best_value, decimal=7)
 
 
-def test_find_best_value(regression_data):
+def test_find_best_value(regression_data, experiment):
     model = TunedKNNRegressorBlock(name='optuna_test', n_trials=10, scoring='neg_mean_absolute_error')
     df, y = regression_data
-    model.fit(df, y)
+    model.fit(df, y, experiment)
 
     trial_df = model.study.trials_dataframe()
     assert trial_df['value'].max() == model.study.best_value
 
 
-def test_change_scoring_strategy(regression_data):
+def test_change_scoring_strategy(regression_data, experiment):
     """check same scoring value in convex objective"""
     df, y = regression_data
     model = TunedKNNRegressorBlock(name='test', n_trials=1,
                                    scoring='neg_root_mean_squared_error',
                                    scoring_strategy='whole')
-    oof_df = model.fit(df, y)
+    oof_df = model.fit(df, y, experiment)
     from sklearn.metrics import mean_squared_error
 
     assert - mean_squared_error(y, oof_df.values[:, 0]) ** .5 == model.study.best_value
 
 
-def test_custom_scoring_metric(regression_data):
+def test_custom_scoring_metric(regression_data, experiment):
     df, y = regression_data
     scoring = make_scorer(mean_absolute_error, greater_is_better=False)
     model = TunedKNNRegressorBlock(name='optuna', n_trials=10, scoring=scoring)
-    model.fit(df, y)
+    model.fit(df, y, experiment)
     log_df = model.study.trials_dataframe()
     assert (log_df['value'] > 0).sum() == 0, log_df
