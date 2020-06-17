@@ -19,6 +19,20 @@ class SampleFeature(BaseBlock):
         return source_df
 
 
+class CounterBlock(BaseBlock):
+    def __init__(self, **kwargs):
+        super(CounterBlock, self).__init__(**kwargs)
+        self.counter = 0
+
+    def fit(self, source_df, y, experiment) -> pd.DataFrame:
+        self.counter += 1
+        return self.transform(source_df)
+
+    def transform(self, source_df: pd.DataFrame) -> pd.DataFrame:
+        out = source_df.copy()
+        return out.add_prefix(self.name)
+
+
 @pytest.fixture
 def regression_Xy():
     return np.random.uniform(size=(100, 20)), np.random.uniform(size=(100,))
@@ -62,10 +76,3 @@ def clean_up(tmpdir: str):
     Settings.DATAFRAME_BACKEND = 'vivid.backends.dataframes.JoblibBackend'
     get_dataframe_backend.backend = None
     shutil.rmtree(tmpdir)
-
-
-def test_sample_feature(regression_set):
-    train_df, y = regression_set
-    feat = SampleFeature()
-    df = feat.fit(train_df, y=y)
-    assert len(df) == len(regression_set)
