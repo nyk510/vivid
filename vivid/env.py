@@ -7,8 +7,6 @@ from typing import Callable
 
 from .utils import import_string
 
-__author__ = "nyk510"
-
 
 class Settings:
     """store settings whole training"""
