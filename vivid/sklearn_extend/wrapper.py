@@ -20,9 +20,13 @@ scaler = {
 }
 
 
-def get_scalar_by_name(name) -> Union[None, StandardScaler]:
-    return scaler.get(name, None)()
-
+def get_scalar_by_name(name: Union[None, str]) -> Union[None, StandardScaler]:
+    if name is None:
+        return None
+    try:
+        return scaler.get(name, None)()
+    except TypeError:
+        raise ValueError('{} is not defined. must be {}'.format(name, ','.join(map(str, scaler.keys()))))
 
 class UtilityTransform(TransformerMixin, BaseEstimator):
     """
@@ -129,7 +133,7 @@ class PrePostProcessModel(BaseEstimator):
         clf = clone(self.instance)
         x, y = self._before_fit(x_train, y_train)
         # self.fit_params_ = kwargs
-        self.fitted_model_ = clf.fit(x, y, **kwargs)
+        self.fitted_model_ = clf.fit(x, y=y, **kwargs)
         return self
 
     def predict(self, x, prob=False):
