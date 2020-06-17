@@ -1,1 +1,1 @@
-from .blocks import BinningCountBlock
+from .base import BinningCountBlock, CountEncoder, OneHotEncoder

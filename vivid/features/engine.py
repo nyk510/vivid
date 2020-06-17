@@ -5,7 +5,17 @@ import pandas as pd
 from sklearn.base import TransformerMixin, BaseEstimator
 
 
-class OneHotEncoder(TransformerMixin, BaseEstimator):
+class BaseEngine(TransformerMixin, BaseEstimator):
+    """単に明示的に fit / transform を定義している scikit-learn 準拠の transformer"""
+
+    def fit(self, X, y=None):
+        raise NotImplementedError()
+
+    def transform(self, X):
+        raise NotImplementedError()
+
+
+class OneHotEncoder(BaseEngine):
     """use_columns に対して One Hot Encoding を実行する"""
 
     def __init__(self,
@@ -44,7 +54,7 @@ class OneHotEncoder(TransformerMixin, BaseEstimator):
         return df_i.values
 
 
-class BinCountEncoder(TransformerMixin, BaseEstimator):
+class BinCountEncoder(BaseEngine):
     def __init__(self, bins=25):
         self.bins = bins
 
@@ -64,7 +74,7 @@ class BinCountEncoder(TransformerMixin, BaseEstimator):
         return x
 
 
-class CountEncoder(TransformerMixin, BaseEstimator):
+class CountEncoder(BaseEngine):
     """Training Data を master set とみなしCount Encoding を実行する"""
 
     def __init__(self):
