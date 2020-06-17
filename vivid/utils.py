@@ -180,6 +180,16 @@ def save_response_content(response, destination):
     logger.info("Save to:{}".format(destination))
 
 
-def sigmoid(x, threshold=15.):
+def sigmoid(x: np.ndarray, threshold=15.) -> np.ndarray:
+    """
+    apply sigmoid function safety
+
+    Args:
+        x:
+        threshold:
+
+    Returns:
+
+    """
     x = np.clip(x, -threshold, threshold)
     return 1.0 / (1.0 + np.exp(-x))

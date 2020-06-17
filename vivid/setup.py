@@ -1,18 +1,27 @@
 import os
 from dataclasses import dataclass
+from typing import List, Union
 
 from .env import Settings
 
 
 @dataclass
 class Project:
+    """project structure
+    """
     output_root: str
     raw: str
     processed: str
     cache: str
     visualize: str
 
-    def directories(self):
+    def directories(self) -> List[str]:
+        """
+        return all directories.
+
+        Returns:
+            List of directories
+        """
         return [
             self.output_root,
             self.raw,
@@ -22,7 +31,7 @@ class Project:
         ]
 
 
-def setup_project(root=None, create=True) -> Project:
+def setup_project(root: Union[str, None] = None, create: bool = True) -> Project:
     """
     setup new project directories which deal dataset and save model weights
 
