@@ -5,9 +5,9 @@
 When you change parameter search range, override `generate_model_class_try_params`. 
 
 ```python
-from vivid.out_of_fold.boosting import OptunaXGBRegressionOutOfFold
+from vivid.estimators.boosting import TunedXGBRegressorBlock
 
-class CustomXGBoostRegressor(OptunaXGBRegressionOutOfFold):
+class CustomXGBoostRegressor(TunedXGBRegressorBlock):
   def generate_model_class_try_params(self, trial):
     params = {
       'reg_lambda': trial.suggest_uniform(0, 1, 'reg_lambda')

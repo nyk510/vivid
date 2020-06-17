@@ -29,7 +29,7 @@ Main constructor arguments is as follow.
 For example, to use XGBoost classifier model feature, import `XGBoostOutOfFoldClasssifier` from `vivid.out_of_fold.boosting`.
 
 ```python
-from vivid.out_of_fold.boosting import XGBoostOutOfFoldClasssifier
+from vivid.estimators.boosting import XGBoostOutOfFoldClasssifier
 from sklearn.dataset import load_boston
 import pandas as pd
 
@@ -100,7 +100,7 @@ pred_df.equals(pred2_df) # True
 When predict other test dataset, indicate `recreate=True` explicity.
 
 ```python
-pred2_df = model.predict(other_test_df, recreate=True)
+pred2_df = model.predict(other_test_df, ignore_storage=True)
 pred_df.equals(pred2_df) # False
 ```
 :::
@@ -129,19 +129,19 @@ If you make stacking model, set the `MergeFeature`, which has input models as fi
 
 ```python
 from vivid.core import MergeFeature
-from vivid.out_of_fold.boosting import XGBoostOutOfFoldClasssifier
-from vivid.out_of_fold.linear import LogisticOutOfFold
+from vivid.estimators.boosting import XGBoostOutOfFoldClasssifier
+from vivid.estimators.linear import TunedLogisticBlock
 
 single_models = [
   XGBoostOutOfFoldClasssifier(name='xgb'),
-  LogisticOutOfFold(name='logistic')
+  TunedLogisticBlock(name='logistic')
 ]
 
 # create merge all single model output feature
 merged = MergeFeature(single_models[:], name='merged')
 
 stacking_models = [
-  LogisticOutOfFold(name='stackd_logistic', parent=merged)
+  TunedLogisticBlock(name='stackd_logistic', parent=merged)
 ]
 ```
 
@@ -151,7 +151,7 @@ For Gradient Boosted Decision Tree, it is well known that ensembled model change
 vivid can make seed averaging model by using `create_boosting_seed_blocks`.
 
 ```python
-from vivid.out_of_fold.boosting.block import create_boosting_seed_blocks
+from vivid.estimators.boosting.block import create_boosting_seed_blocks
 
 models = create_boosting_seed_blocks()
 ```
