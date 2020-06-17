@@ -41,7 +41,9 @@ REGRESSION_METRICS = {
 }
 
 
-def binary_metrics(y_true: np.ndarray, predict_probability: np.ndarray, threshold=.5) -> dict:
+def binary_metrics(y_true: np.ndarray,
+                   predict_probability: np.ndarray,
+                   threshold=.5) -> dict:
     """
     calculate binary task metrics
 
@@ -53,7 +55,7 @@ def binary_metrics(y_true: np.ndarray, predict_probability: np.ndarray, threshol
         threshold:
             Thresholds for calculating the metrics that need to be evaluated as labels
     Returns:
-        metrics series
+        metrics metrics dictionary. the key is metric name, and the value is score.
     """
     predict_label = np.where(predict_probability > threshold, 1, 0)
     none_prob_functions = [
@@ -91,7 +93,7 @@ def regression_metrics(y_true, y_pred) -> dict:
             predict value. shape = (n_data,)
 
     Returns:
-        regression metrics dataframe
+        regression metrics dictionary
     """
 
     scores = {}
