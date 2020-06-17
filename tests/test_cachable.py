@@ -6,8 +6,8 @@ import pandas as pd
 import pytest
 from sklearn.datasets import load_boston
 
+from vivid.cacheable import cacheable, CacheFunctionFactory
 from vivid.env import Settings
-from vivid.fixture import cacheable, CacheFunctionFactory
 from vivid.setup import setup_project
 
 
@@ -36,18 +36,9 @@ def boston_count_loader():
     return CountLoader(load_boston)
 
 
-@pytest.mark.parametrize('inputs,expect', [
-    (('foo', '/analysis/data', 'hoge'), '/analysis/data/foo.hoge'),
-])
-def test_get_cache_dir(inputs, expect):
-    from vivid.fixture import _get_cache_dir
-
-    assert _get_cache_dir(*inputs) == expect
-
-
 def test_fixture_cache(boston_count_loader, cache_dir):
     @cacheable
-    def boston():
+    def boston(x=1):
         return boston_count_loader()
 
     X1, y1 = boston()
@@ -56,7 +47,7 @@ def test_fixture_cache(boston_count_loader, cache_dir):
 
     assert boston_count_loader.counter == 1
     # by default, save to env.Settings.CACHE_DIR
-    assert os.path.exists(os.path.join(cache_dir, 'boston.joblib'))
+    assert os.path.exists(os.path.join(cache_dir, 'boston'))
 
     X2, y2 = boston()
     assert isinstance(X2, np.ndarray)
@@ -74,18 +65,26 @@ def test_fixture_cache(boston_count_loader, cache_dir):
     boston()
     assert boston_count_loader.counter == 2
 
-    CacheFunctionFactory.clear_cache()
+    CacheFunctionFactory.clear_cache('boston')
     boston()
     assert boston_count_loader.counter == 3
 
+    # change argument
+    boston(x=10)
+    assert boston_count_loader.counter == 4
+
+    # もう一回呼び出した時は cache を使う (callされない)
+    boston(x=10)
+    assert boston_count_loader.counter == 4
+
 
 def test_register_as_custom_name(boston_count_loader, cache_dir):
-    @cacheable(callable_or_scope='other_boston')
+    @cacheable(callable_or_scope='custom_dir')
     def boston():
         return boston_count_loader()
 
-    X, y = boston()
-    assert os.path.exists(os.path.join(cache_dir, 'other_boston.joblib'))
+    boston()
+    assert os.path.exists(os.path.join(cache_dir, 'custom_dir'))
 
 
 @pytest.mark.usefixtures('cache_dir')
@@ -99,9 +98,7 @@ def test_generated_object_type(output):
     def test():
         return output
 
-    x1 = test()
-    CacheFunctionFactory.clear_cache()
-    x2 = test()
+    test()
 
 
 def test_list_key():
