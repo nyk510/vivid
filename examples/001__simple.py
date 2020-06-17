@@ -11,5 +11,7 @@ if __name__ == '__main__':
     xgb = XGBRegressorBlock('xgb')
 
     experiment = LocalExperimentBackend('./outputs/simple')
-    oof = xgb.fit(train_df, y, experiment=experiment)
-    xgb.report(train_df, y, oof, experiment=experiment)
+
+    with experiment.as_environment(xgb.runtime_env) as exp:
+        oof = xgb.fit(train_df, y, experiment=exp)
+        xgb.report(train_df, y, oof, experiment=exp)
