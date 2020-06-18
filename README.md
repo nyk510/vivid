@@ -16,12 +16,16 @@ from vivid.estimators.boosting import XGBRegressorBlock
 X, y = load_boston(return_X_y=True)
 train_df = pd.DataFrame(X)
 
+# create model and experiment
 xgb = XGBRegressorBlock('xgb')
 experiment = LocalExperimentBackend('./outputs/simple')
 
-with experiment.as_environment(xgb.runtime_env) as exp:
-    oof = xgb.fit(train_df, y, experiment=exp)
-    xgb.report(train_df, y, oof.values[:, 0], experiment=exp)
+# run models
+from vivid.runner import create_runner
+
+runner = create_runner(blocks=xgb, experiment=experiment)
+runner.fit(train_df, y)
+runner.predict(train_df)
 ```
 
 VIVID makes it easy to describe model/feature relationships. For example, you can easily describe stacking, which can be quite complicated if you create it normally.
