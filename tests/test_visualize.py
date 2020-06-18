@@ -11,8 +11,7 @@ from vivid.visualize import visualize_pr_curve, visualize_roc_auc_curve, visuali
 
 @pytest.mark.parametrize('func', [
     visualize_roc_auc_curve,
-    visualize_pr_curve,
-    visualize_distributions
+    visualize_pr_curve
 ])
 def test_raise_error_continuous(func):
     y_true = [1, 1, 1, 0, 0, .6]  # contains continuous value `.6`
@@ -31,6 +30,15 @@ def test_binary_predict(function):
     y_true = [1, 1, 1, 0, 0, 0]
     y_pred = [.2, .3, .4, .1, .4, .7]
 
+    function(y_true, y_pred)
+
+
+@pytest.mark.parametrize('function', [
+    visualize_distributions
+])
+def test_continuous_target(function):
+    y_true = [.2, .4, 10., .4]
+    y_pred = [.4, .5, .2, .5]
     function(y_true, y_pred)
 
 
