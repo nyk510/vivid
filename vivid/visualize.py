@@ -82,15 +82,16 @@ def visualize_distributions(y_true, y_pred, ax: Union[None, plt.Axes] = None):
 
 def visualize_continuous_distributions(y_true,
                                        y_pred,
-                                       ax: Union[None, plt.Axes] = None) -> [Union[plt.Figure, None], plt.Axes]:
+                                       ax: Union[None, plt.Axes] = None) \
+    -> [Union[plt.Figure, None], plt.Axes]:
     if ax is None:
         fig, ax = plt.subplots(figsize=(6, 6))
     else:
         fig, ax = None, ax
 
-    ax.scatter(x=y_pred, y=y_true)
-    ax.set_xlabel('Predict')
-    ax.set_ylabel('Target')
+    sns.distplot(y_true, ax=ax, label='Target')
+    sns.distplot(y_pred, ax=ax, label='Predict')
+    ax.legend()
     return fig, ax
 
 
