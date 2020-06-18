@@ -2,190 +2,138 @@
 """
 モデル作成時に用いるクラスなどの定義
 """
-import os
+from typing import Union
 
-import joblib
 import numpy as np
-from sklearn.base import TransformerMixin, BaseEstimator
-from sklearn.preprocessing import StandardScaler
+from sklearn.base import TransformerMixin, BaseEstimator, clone
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.utils.validation import check_is_fitted
 
-from ..env import Settings
 from ..utils import get_logger
 
-__author__ = "nyk510"
+logger = get_logger(__name__)
+
+scaler = {
+    True: StandardScaler,
+    'standard': StandardScaler,
+    'minmax': MinMaxScaler
+}
 
 
-def get_scalar_by_name(name):
-    scaler = {
-        'standard': StandardScaler()
-    }
-    return scaler.get(name, None)
+def get_scalar_by_name(name: Union[None, str]) -> Union[None, StandardScaler]:
+    if name is None:
+        return None
+    try:
+        return scaler.get(name, None)()
+    except TypeError:
+        raise ValueError('{} is not defined. must be {}'.format(name, ','.join(map(str, scaler.keys()))))
 
-
-class UtilityTransform(BaseEstimator, TransformerMixin):
+class UtilityTransform(TransformerMixin, BaseEstimator):
     """
     sklearn transformer にログスケール変換の処理を追加した transformer
     """
 
-    def __init__(self, log=False, scaling=None):
+    def __init__(self,
+                 log: bool = False,
+                 scaling: Union[None, str] = None):
+        super(UtilityTransform, self).__init__()
         self.log = log
-        self.scaling = get_scalar_by_name(scaling)
+        self.scaling = scaling
         self.threshold = 1e-10
 
-    @property
-    def use_scaling(self):
-        return self.scaling is not None
+    def fit(self, X, y=None):
+        self.scalar_ = get_scalar_by_name(self.scaling)
+        if self.scaling is not None and self.scalar_ is None:
+            raise ValueError('{} is not a valid scaling name. Must be one of the following name '.format(self.scaling) \
+                             + ', '.join(map(str, scaler.keys())))
+        if self.log and np.sum(X < 0) > 0:
+            raise ValueError('In Log-scalar, you must input value over zero')
 
-    def fit(self, x, y=None):
-        if self.log and np.sum(x < 0) > 0:
-            raise ValueError('In Logscalar, you must input value over zero')
-
-        self.is_one_dim_ = len(x.shape) == 1
+        self.is_one_dim_ = len(X.shape) == 1
         if self.log:
-            x = np.log1p(x + self.threshold)
+            X = np.log1p(X + self.threshold)
 
-        if self.use_scaling:
+        if self.scalar_ is not None:
+            logger.debug('fit scaling {}'.format(self.scalar_))
             if self.is_one_dim_:
-                x = x.reshape(-1, 1)
-            x = self.scaling.fit_transform(x)
+                X = X.reshape(-1, 1)
+            self.scalar_ = self.scalar_.fit(X, y=y)
         return self
 
-    def transform(self, x):
+    def transform(self, X):
         check_is_fitted(self, 'is_one_dim_')
-        if self.log:
-            x = np.log1p(x + self.threshold)
-
-        if self.use_scaling:
-            if self.is_one_dim_:
-                x = x.reshape(-1, 1)
-            x = self.scaling.transform(x)
-            if self.is_one_dim_:
-                x = x.reshape(-1, )
-        return x
-
-    def inverse_transform(self, x):
-        check_is_fitted(self, 'is_one_dim_')
-        if self.use_scaling:
-            if self.is_one_dim_:
-                x = x.reshape(-1, 1)
-            x = self.scaling.inverse_transform(x)
-
-            if self.is_one_dim_:
-                x = x.reshape(-1, )
+        if self.scalar_:
+            check_is_fitted(self.scalar_)
 
         if self.log:
-            x = np.expm1(x) - self.threshold
-        return x
+            X = np.log1p(X + self.threshold)
+
+        if self.scalar_:
+            if self.is_one_dim_:
+                X = X.reshape(-1, 1)
+            X = self.scalar_.transform(X)
+            if self.is_one_dim_:
+                X = X.reshape(-1, )
+        return X
+
+    def inverse_transform(self, X):
+        check_is_fitted(self, 'is_one_dim_')
+        if self.scalar_:
+            if self.is_one_dim_:
+                X = X.reshape(-1, 1)
+            X = self.scalar_.inverse_transform(X)
+
+            if self.is_one_dim_:
+                X = X.reshape(-1, )
+
+        if self.log:
+            X = np.expm1(X) - self.threshold
+        return X
 
 
 class PrePostProcessModel(BaseEstimator):
-    """
-    モデルの保存と入出力の正規化を行う機能を加えた scikit-learn estimator
+    """Custom Scikit-Learn Estimator
+
+    [note] this class should be replaced by pileline class. (future work)
     """
 
     def __init__(self,
-                 model_class,
-                 model_params=None,
+                 instance: BaseEstimator,
                  input_scaling=None,
                  input_logscale=False,
                  target_scaling=None,
-                 target_logscale=False,
-                 output_dir=None,
-                 verbose=1,
-                 logger=None):
+                 target_logscale=False):
         """
+
 
         Args:
-            model_class:
-                学習させるモデルの class.
-                model_class.fit を実装していること及び pickle で保存できる必要があります
-            model_params(dict | None): モデルのパラメータ
-            output_dir(str): モデルを保存するディレクトリのパス
-            prepend_name(str): 最適なモデルを保存するときの prefix
-            use_scaling(bool):
-            num_cv_in_search:
-            scoring(str): 探索時に使用する metrics
-            logger:
+            instance:
+                main model instance.
+            input_scaling:
+                scaling name apply to feature `X` before input to instance
+            input_logscale:
+                set True, feature `X` convert to logscale
+            target_scaling:
+                scaling name apply to target `y` before instance
+            target_logscale:
+                set True, target `y` convert to logscale
         """
-        self.model_class = model_class
 
-        if isinstance(model_params, dict):
-            self.model_params = model_params
-        elif model_params is None:
-            self.model_params = {}
-        else:
-            raise ValueError('`model_param` must be dict or None. actually: {}'.format(model_params))
+        self.input_scaling = input_logscale
+        self.input_logscale = input_logscale
+        self.target_scaling = target_logscale
+        self.target_logscale = target_logscale
 
         self.input_transformer = UtilityTransform(input_logscale, input_scaling)
         self.target_transformer = UtilityTransform(target_logscale, target_scaling)
-
-        self.output_dir = output_dir
-        self.verbose = verbose
-
-        if logger is None:
-            self.logger = get_logger(__name__, Settings.LOG_LEVEL)
-        else:
-            self.logger = logger
-
-    @property
-    def is_recording(self):
-        return self.output_dir is not None
-
-    @property
-    def model_path(self):
-        if not self.is_recording:
-            return None
-        return os.path.join(self.output_dir, 'best_fitted.joblib')
-
-    def create_model(self):
-        self.logger.debug('Model Params')
-
-        for k, v in self.model_params.items():
-            self.logger.debug(f'{k}\t{v}')
-
-        return self.model_class(**self.model_params)
-
-    def load_trained_model(self):
-        """
-        :return: self
-        :rtype: PrePostProcessModel
-        """
-        self.logger.debug('load model: {}'.format(self.model_path))
-        self.fitted_model_ = joblib.load(self.model_path)
-
-        self.input_transformer = joblib.load(os.path.join(self.output_dir, 'input.joblib'))
-        self.target_transformer = joblib.load(os.path.join(self.output_dir, 'target.joblib'))
-
-        return self
-
-    def save_trained_model(self):
-        os.makedirs(self.output_dir, exist_ok=True)
-        self.logger.info('save to: {}'.format(self.model_path))
-        joblib.dump(self.fitted_model_, self.model_path)
-        joblib.dump(self.target_transformer, os.path.join(self.output_dir, 'target.joblib'))
-        joblib.dump(self.input_transformer, os.path.join(self.output_dir, 'input.joblib'))
+        self.instance = instance
+        super(PrePostProcessModel, self).__init__()
 
     def fit(self, x_train, y_train, **kwargs):
-        """
-        学習を実行するメソッド
-        与えられたトレーニングデータで学習を行った後, 学習済みモデルを保存する
-
-        Args:
-            x_train(np.ndarray):
-            y_train(np.ndarray):
-            valid_set:
-            fit_params(dict):
-
-        Returns: fitted model instance
-
-        """
-        clf = self.create_model()
+        clf = clone(self.instance)
         x, y = self._before_fit(x_train, y_train)
-        self.fit_params_ = kwargs
-        self.fitted_model_ = clf.fit(x, y, **kwargs)
-        if self.is_recording:
-            self.save_trained_model()
+        # self.fit_params_ = kwargs
+        self.fitted_model_ = clf.fit(x, y=y, **kwargs)
         return self
 
     def predict(self, x, prob=False):
@@ -195,13 +143,29 @@ class PrePostProcessModel(BaseEstimator):
             try:
                 pred = self.fitted_model_.predict_proba(x)
             except AttributeError as e:
-                self.logger.warning(e)
+                logger.warning(e)
                 pred = self.fitted_model_.predict(x)
         else:
             pred = self.fitted_model_.predict(x)
 
         pred = self.target_transformer.inverse_transform(pred)
         return pred
+
+    def get_params(self, deep=True):
+        params = super(PrePostProcessModel, self).get_params(deep=False)
+
+        if not deep:
+            return params
+
+        params.update({
+            'instance': {
+                'class': str(type(self.instance)),
+                'params': self.instance.get_params(deep=True),
+            },
+            'input_transformer': self.input_transformer.get_params(deep=True),
+            'target_transformer': self.target_transformer.get_params(deep=True)
+        })
+        return params
 
     def _before_fit(self, x_train, y_train):
         x = self.input_transformer.fit_transform(x_train)

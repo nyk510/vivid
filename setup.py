@@ -26,10 +26,11 @@ def get_install_requires():
         'pandas',
         'joblib',
         'optuna',
-        'xgboost',
+        'xgboost<=1.0.2',
         'lightgbm',
         'feather-format',
-        'tabulate'
+        'tabulate',
+        'networkx'
     ]
     return install_requires
 
@@ -38,7 +39,7 @@ def get_extra_requires():
     extras = {
         'test': ['pytest', 'pytest-cov', 'parameterized', 'ipython', 'jupyter', 'notebook', 'tornado==5.1.1',
                  # use skeras models
-                 'keras', 'tensorflow',
+                 'keras<=2.3.1', 'tensorflow',
                  'comet_ml'],
         'document': ['sphinx', 'sphinx_rtd_theme']
     }

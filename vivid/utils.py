@@ -7,9 +7,21 @@ from importlib import import_module
 from logging import getLogger, StreamHandler, FileHandler, Formatter
 from time import time
 
+import numpy as np
 import requests
 import seaborn as sns
 from tqdm import tqdm
+
+
+def ipython_debug(function):
+    def wrapper(*args, **kwargs):
+        try:
+            return function(*args, **kwargs)
+        except Exception as e:
+            from IPython.core.debugger import set_trace
+            set_trace()
+
+    return wrapper
 
 
 def import_string(dotted_path):
@@ -71,11 +83,11 @@ def timer(logger=None, format_str='{:.3f}[s]', prefix=None, suffix=None):
         print(out_str)
 
 
-def get_logger(name, log_level="DEBUG",
+def get_logger(name, log_level='DEBUG',
                output_file=None,
-               handler_level="INFO",
+               handler_level='INFO',
                output_level='DEBUG',
-               format_str="%(message)s"):
+               format_str='%(message)s'):
     """
     :param str name:
     :param str log_level:
@@ -166,3 +178,18 @@ def save_response_content(response, destination):
             f.write(chunk)
     logger.info("Finish!!")
     logger.info("Save to:{}".format(destination))
+
+
+def sigmoid(x: np.ndarray, threshold=15.) -> np.ndarray:
+    """
+    apply sigmoid function safety
+
+    Args:
+        x:
+        threshold:
+
+    Returns:
+
+    """
+    x = np.clip(x, -threshold, threshold)
+    return 1.0 / (1.0 + np.exp(-x))

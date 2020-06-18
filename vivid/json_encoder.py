@@ -120,5 +120,6 @@ class NestedEncoder(json.JSONEncoder):
 
             if converted is not None:
                 obj = converted
+                break
 
         return obj

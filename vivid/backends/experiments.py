@@ -1,24 +1,50 @@
 import json
 import os
+import shutil
 import warnings
 from contextlib import contextmanager
 from datetime import datetime
+from typing import ContextManager
+from typing import Union, List
 
 import joblib
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from vivid.env import get_dataframe_backend
 from vivid.json_encoder import NestedEncoder
+from vivid.utils import get_logger
 
 
 class ExperimentBackend:
     """base class for all experiment backends"""
+
+    def __init__(self,
+                 to=None,
+                 keys: Union[List[str], None] = None,
+                 logger=None,
+                 datafame_backend=None):
+        self.to = to
+        self.keys = [] if keys is None else keys
+        self.logger = get_logger(__name__)
+        self.dataframe_backend = get_dataframe_backend() if datafame_backend is None else datafame_backend
+
+    def __enter__(self):
+        self.start()
 
     def start(self):
         pass
 
     def end(self):
         pass
+
+    def has(self, key):
+        """whether save object as the key name"""
+        return False
+
+    @property
+    def can_save(self):
+        return self.to is not None
 
     def save_object(self, key, obj):
         mapping = {
@@ -42,6 +68,12 @@ class ExperimentBackend:
             warnings.warn(str(e))
             return
 
+    def load_object(self, key):
+        raise FileNotFoundError()
+
+    def get_marked(self) -> Union[None, dict]:
+        return None
+
     def mark(self, key, value):
         pass
 
@@ -58,47 +90,122 @@ class ExperimentBackend:
         pass
 
     @contextmanager
-    def mark_time(self, prefix=''):
+    def mark_time(self, prefix: str) -> ContextManager['ExperimentBackend']:
         start = datetime.now()
+        self.logger.debug('start time tracking...for [{}]'.format(prefix))
         yield self
         end = datetime.now()
         duration = (end - start).total_seconds() / 60
-        self.mark(prefix + 'start_at', start)
-        self.mark(prefix + 'end_at', end)
-        self.mark(prefix + 'duration_minutes', f'{duration:.2f}')
+        self.logger.debug('finished. duration: {:.2f}[min]'.format(duration))
+        self.mark(prefix, {
+            'start_at': start,
+            'end_at': end,
+            'duration_minutes': '{:.2f}'.format(duration)
+        })
+
+    @contextmanager
+    def as_environment(self, *keys, style='flatten') -> ContextManager['ExperimentBackend']:
+        yield self
 
     @contextmanager
     def silent(self):
+        _tmp = self.to
+        self.to = None
+        self.logger.disabled = True
+        yield self
+        self.to = _tmp
+        self.logger.disabled = False
+
+    def clear(self):
         pass
 
+    def set_silent(self):
+        self.logger.disabled = True
 
-def save_method(func):
-    def inner(self: 'LocalExperimentBackend', *args, **kwargs):
-        if not self.has_output_dir:
-            return
+
+def as_safety(func):
+    """
+    If the instance has not output directory, pass call method.
+
+    Args:
+        func:
+            decorate function.
+            expect the method of a class that has `has_output_dir` attribute.
+
+    Returns:
+        wrapper function
+    """
+
+    def inner(self: 'ExperimentBackend', *args, **kwargs):
+        if not self.can_save:
+            self.logger.info('cant allow save. skip call.')
+            return None
         return func(self, *args, **kwargs)
 
     return inner
 
 
+def get_logger_name(to, keys: List[str]):
+    prepends = []
+    if to:
+        prepends += [os.path.basename(to)]
+    else:
+        prepends += [__name__]
+    prepends += map(str, keys)
+    logger_name = '/'.join(prepends)
+    return logger_name
+
+
 class LocalExperimentBackend(ExperimentBackend):
     """save object to local storage backend"""
 
-    def __init__(self, output_dir):
-        self.output_dir = output_dir
-        self.mark_filename = 'metrics.json'
+    def __init__(self, to=None, mark_filename='metrics.json', **kwargs):
+        if to is not None:
+            to = os.path.abspath(to)
+        super(LocalExperimentBackend, self).__init__(to, **kwargs)
+
+        self.mark_filename = mark_filename
+
+        if self.can_save:
+            os.makedirs(self.output_dir, exist_ok=True)
+
+        logger_name = get_logger_name(to, keys=self.keys)
+        self.logger = get_logger(name=logger_name,
+                                 output_file=self.logging_path,
+                                 format_str='%(name)-30s: %(levelname)-8s %(message)s')
+        self.logger.debug('experiment output is {}'.format(self.output_dir))
+        self.logger.debug('logger name: {}'.format(logger_name))
+
+    @property
+    def logging_path(self):
+        if not self.output_dir:
+            return None
+
+        return os.path.join(self.output_dir, 'log.txt')
 
     @property
     def metric_path(self):
-        if self.output_dir is not None:
+        if self.to is not None:
             return os.path.join(self.output_dir, self.mark_filename)
         return None
 
-    @property
-    def has_output_dir(self):
-        return self.output_dir is not None
+    @as_safety
+    def has(self, key):
+        for n in os.listdir(self.output_dir):
+            if key in n:
+                return True
+        return False
 
-    @save_method
+    @property
+    def output_dir(self):
+        """exact output directory"""
+        if self.to is None:
+            return None
+        if self.keys is None:
+            return self.to
+        return os.path.join(self.to, *self.keys)
+
+    @as_safety
     def get_marked(self):
         if os.path.exists(self.metric_path):
             with open(self.metric_path, 'r') as f:
@@ -107,7 +214,7 @@ class LocalExperimentBackend(ExperimentBackend):
             data = {}
         return data
 
-    @save_method
+    @as_safety
     def mark(self, key, value):
         update_data = {
             key: value
@@ -123,31 +230,63 @@ class LocalExperimentBackend(ExperimentBackend):
             key = f'{key}.{ext}'
         return os.path.join(self.output_dir, key)
 
-    @save_method
+    @as_safety
     def save_json(self, key, obj: dict):
         with open(self._to_path(key, 'json'), 'w') as f:
             json.dump(obj, f, cls=NestedEncoder, indent=4)
 
-    @save_method
-    def save_dataframe(self, key, df: pd.DataFrame):
-        df.to_csv(self._to_path(key, 'csv'))
+    @as_safety
+    def save_dataframe(self, key, df: pd.DataFrame, **kwargs):
+        df.to_csv(self._to_path(key, 'csv'), **kwargs)
 
-    @save_method
+    @as_safety
     def save_figure(self, key, fig: plt.Figure):
         fig.tight_layout()
         fig.savefig(self._to_path(key, 'png'), dpi=120)
         plt.close(fig)
 
-    @save_method
+    @as_safety
     def save_as_python_object(self, key, obj):
-        joblib.dump(obj, self._to_path(key, ext='joblib'))
+        p = joblib.dump(obj, self._to_path(key, ext='joblib'))
+        self.logger.debug(f'save {str(obj)} to {p}')
+
+    @as_safety
+    def load_object(self, key):
+        return joblib.load(self._to_path(key, ext='joblib'))
+
+    @as_safety
+    def clear(self):
+        shutil.rmtree(self.output_dir)
 
     @contextmanager
-    def silent(self):
-        _tmp = self.output_dir
-        self.output_dir = None
-        yield self
-        self.output_dir = _tmp
+    def as_environment(self, *keys, style='nested') -> ContextManager['LocalExperimentBackend']:
+        """
+        change environment to the keys and yield return myself
+
+        Args:
+            keys:
+                new environment's key. list of strings.
+        """
+        if style == 'flatten':
+            keys = list(keys)
+        elif style == 'nested':
+            keys = self.keys + list(keys)
+        else:
+            raise ValueError('style is must be {}. Actually, {}'.format(','.join(['flatten', 'nested']),
+                                                                        style))
+
+        children = LocalExperimentBackend(to=self.to,
+                                          mark_filename=self.mark_filename,
+                                          keys=keys,
+                                          datafame_backend=self.dataframe_backend)
+
+        if self.logger.disabled:
+            with children.silent():
+                yield children
+        else:
+            yield children
+
+        del children
 
 
 class CometMLExperimentBackend(ExperimentBackend):

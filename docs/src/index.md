@@ -24,12 +24,12 @@ pip install git+https://gitlab.com/nyker510/vivid
 ```python
 from sklearn.datasets import load_boston
 import pandas as pd
-from vivid.out_of_fold.boosting import LGBMRegressorOutOfFold
+from vivid.estimators.boosting import LGBMRegressorBlock
 
 X, y = load_boston(return_X_y=True)
 df = pd.DataFrame(X)
 
-model = LGBMRegressorOutOfFold(name='lgbm', cv=6, root_dir='./')
+model = LGBMRegressorBlock(name='lgbm', cv=6, root_dir='./')
 model.fit(df, y)
 
 [2020-05-01 08:32:47,586 vivid.feature.lgbm] lgbm

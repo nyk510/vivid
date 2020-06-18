@@ -5,58 +5,69 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from vivid.core import AbstractFeature
+from vivid.core import BaseBlock
 
 HOME = os.path.expanduser('~')
 RECORDING_DIR = os.path.join(HOME, '.vivid', 'test')
 
 
-class SampleFeature(AbstractFeature):
+class SampleFeature(BaseBlock):
     def __init__(self):
         super(SampleFeature, self).__init__('sample')
 
-    def call(self, df_source, y=None, test=False):
-        return df_source
+    def transform(self, source_df):
+        return source_df
 
 
-class RecordingFeature(AbstractFeature):
-    def __init__(self):
-        super(RecordingFeature, self).__init__(name='rec_sample', parent=None, root_dir=RECORDING_DIR)
+class CounterBlock(BaseBlock):
+    def __init__(self, **kwargs):
+        super(CounterBlock, self).__init__(**kwargs)
+        self.counter = 0
 
-    def call(self, df_source, y=None, test=False):
-        return df_source
+    def fit(self, source_df, y, experiment) -> pd.DataFrame:
+        self.counter += 1
+        return self.transform(source_df)
 
-
-@pytest.fixture
-def train_data() -> [pd.DataFrame, np.ndarray]:
-    n_rows = 100
-    n_cols = 10
-    x = np.random.uniform(size=(n_rows, n_cols))
-    y = np.random.uniform(size=(n_rows,))
-    train_df = pd.DataFrame(x)
-    return train_df, y
+    def transform(self, source_df: pd.DataFrame) -> pd.DataFrame:
+        out = source_df.copy()
+        return out.add_prefix(self.name)
 
 
 @pytest.fixture
-def toy_df():
-    x = [
-        [1, 'foo'],
-        [2, 'bar'],
-        [5, 'poyo']
-    ]
-    return pd.DataFrame(data=x, columns=['int_type', 'string_type'])
+def regression_Xy():
+    return np.random.uniform(size=(100, 20)), np.random.uniform(size=(100,))
+
+
+@pytest.fixture
+def binary_Xy(regression_Xy):
+    X, y = regression_Xy
+    return X, np.where(y > .5, 1, 0)
+
+
+@pytest.fixture
+def regression_set(regression_Xy) -> [pd.DataFrame, np.ndarray]:
+    return pd.DataFrame(regression_Xy[0]), regression_Xy[1]
+
+
+@pytest.fixture
+def toy_df() -> pd.DataFrame:
+    data = {
+        'int_type': [1, 2, 3, 2, 1],
+        'string_type': ['hoge', 'hoge', 'foo', 'foo', 'bar']
+    }
+    return pd.DataFrame(data)
 
 
 @pytest.fixture
 def output_dir() -> str:
     default_path = os.path.join(os.path.expanduser('~'), '.vivid', 'test_cache')
-    return os.environ.get('OUTPUT_DIR', default_path)
+    path = os.environ.get('OUTPUT_DIR', default_path)
+    return path
 
 
 @pytest.fixture(scope='function', autouse=True)
-def clean_up(output_dir: str):
-    os.makedirs(output_dir, exist_ok=True)
-    os.makedirs(RECORDING_DIR, exist_ok=True)
+def clean_up(tmpdir: str):
+    os.makedirs(tmpdir, exist_ok=True)
     yield
 
     from vivid.env import Settings, get_dataframe_backend
@@ -64,12 +75,4 @@ def clean_up(output_dir: str):
     Settings.CACHE_ON_TEST = True
     Settings.DATAFRAME_BACKEND = 'vivid.backends.dataframes.JoblibBackend'
     get_dataframe_backend.backend = None
-    shutil.rmtree(output_dir)
-    shutil.rmtree(RECORDING_DIR)
-
-
-def test_sample_feature(train_data):
-    train_df, y = train_data
-    feat = SampleFeature()
-    df = feat.fit(train_df, y=y)
-    assert len(df) == len(train_data)
+    shutil.rmtree(tmpdir)

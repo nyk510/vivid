@@ -23,7 +23,9 @@ def test_filename(name, expect):
 def test_backend(backend_class, output_dir, toy_df):
     backend = backend_class()
 
-    path = os.path.join(output_dir, 'boston')
+    path = os.path.join(output_dir, 'boston.ff')
+    os.makedirs(output_dir, exist_ok=True)
+    
     backend.save(toy_df, path)
 
     df2 = backend.load(path)

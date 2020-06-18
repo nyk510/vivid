@@ -2,19 +2,101 @@
 """
 """
 
-import os
-from contextlib import contextmanager
+import dataclasses
+import hashlib
 from typing import Union, List
 
+import gc
 import numpy as np
 import pandas as pd
 
-from .backends.experiments import LocalExperimentBackend
-from .env import Settings, get_dataframe_backend
-from .utils import get_logger, timer
+from .backends.experiments import ExperimentBackend
+from .utils import get_logger
+
+logger = get_logger(__name__)
 
 
-class AbstractFeature(object):
+def network_hash(block: 'BaseBlock', size=8) -> str:
+    """
+    generate unique key of the network structure.
+
+    Args:
+        block:
+            BaseBlock instance.
+        size:
+            hash key string length. default=8.
+
+    Returns:
+        unique hash string
+
+    """
+    s = block._to_hash()
+
+    for b in block.parent_blocks:
+        s += network_hash(b, size=size)
+    return block.name + '__' + hashlib.sha1(s.encode('UTF-8')).hexdigest()[:size]
+
+
+def not_fitted_blocks(block: 'BaseBlock', experiment: ExperimentBackend) -> List['BaseBlock']:
+    """
+    whether the all network related to the block in the experiment
+
+    Args:
+        block:
+        experiment:
+
+    Returns:
+
+    """
+    retval = []
+    if not block.check_is_fitted(experiment):
+        experiment.logger.info(f'> [ ] {block.name}: NG: not fitted.')
+        retval += [block]
+    else:
+        experiment.logger.info(f'> [x]: {block.name} OK')
+
+    if block.has_parent:
+        experiment.logger.info(f'request from {block.name} ---')
+    for parent in block.parent_blocks:
+        with experiment.as_environment(parent.runtime_env, style='flatten') as exp:
+            retval += not_fitted_blocks(parent, exp)
+    return retval
+
+
+@dataclasses.dataclass
+class EvaluationEnv:
+    """argument dataset pass in report phase. all report functions should be deal this value/"""
+    block: 'BaseBlock'
+    y: np.ndarray
+    output_df: pd.DataFrame
+    parent_df: pd.DataFrame
+    experiment: ExperimentBackend
+
+
+class AbstractEvaluation:
+    def call(self, env: EvaluationEnv):
+        raise NotImplementedError()
+
+
+class SimpleEvaluation(AbstractEvaluation):
+    def call(self, env: EvaluationEnv):
+        env.experiment.mark('train_meta', {
+            'shape': env.output_df.shape,
+            'parent_columns': env.parent_df.columns,
+            'output_columns': env.output_df.columns,
+            'output_null': env.output_df.isnull().sum(),
+            'memory_usage': env.output_df.memory_usage().sum()
+        })
+        env.experiment.save_object('parent_output_sample', env.parent_df.head(100))
+        env.experiment.save_object('oof_output_sample', env.output_df.head(100))
+
+
+def check_block_fit_output(output_df, input_df):
+    if not isinstance(output_df, pd.DataFrame):
+        raise ValueError('Block output must be pandas dataframe object. Actually: {}'.format(type(output_df)))
+
+
+class BaseBlock(object):
     """Abstract class for all feature.
 
     The feature quantity consists of two main methods.
@@ -22,22 +104,21 @@ class AbstractFeature(object):
     * fit: the learning phase, which the internal state is changed based on the input features
     * predict: the prediction phase, which creates a new feature based on the learned state.
 
-    In order to be consistent with the fit/predict conversions, both methods eventually call the call method.
-    If you want to create a new feature, override it.
+    It is not recommended to override the fit/predict method directly.
+    This is to be consistent with the conversion in fit/predict method.
 
-    It is not recommended to override the fit/predict method. This is to be consistent with the conversion
-    in fit/predict method. We believe that the difference between the code at the time of prediction execution and
-    the feature creation code in the learning phase is **the biggest cause of inconsistency** between the training and
-    prediction feature.
+    We believe that the difference between the code at the time of prediction execution and the feature creation code in
+    the learning phase is **the biggest cause of inconsistency** between the training and prediction feature.
     """
 
     # if set True, allow save to local.
     allow_save_local = True
+    is_estimator = False
 
     def __init__(self,
                  name: str,
-                 parent: Union[None, 'AbstractFeature', List['AbstractFeature']] = None,
-                 root_dir: Union[None, str] = None):
+                 parent: Union[None, 'BaseBlock', List['BaseBlock']] = None,
+                 evaluations: List[AbstractEvaluation] = None):
         """
         Args:
             name:
@@ -45,241 +126,206 @@ class AbstractFeature(object):
                 it is highly recommended that name is unique in one project.
                 the name is used as the unique key of dump to local or remote environment.
             parent:
-                parent feature. can set List or single Abstract Feature instance.
-            root_dir:
-                root dir when save experiment logs, object, metrics.
-                If string path is set, save data to the directory.
-                If None is set, it will look for a root_dir in the parent and if so, it will use that value instead.
-                If parent is None too, experiment logs is not stored locally
+                parent_blocks feature. can set List or single Abstract Feature instance.
+            evaluations:
+                evaluation functions. these function must be callable, and deal the `EvaluationEnv` dataset.
+                it is recommended that the sub-class of `AbstractEvaluation` class.
+                by default, set `SimpleEvaluation`.
         """
         self.is_entrypoint = parent is None
-        if parent is not None and isinstance(parent, AbstractFeature):
-            parent = [parent]
-        self.parent = parent
-
-        self._primary_parent = None if parent is None else parent[0]
+        self._parent = parent
         self.name = name
-        self._root_dir = root_dir
+        self._is_root_context = False
+        self._refer_cache = 0
+        self._cache = {}
+        self._id = None
 
-        self.feat_on_train_df = None  # type: Union[None, pd.DataFrame]
-        self.feat_on_test_df = None  # type: Union[None, pd.DataFrame]
-        self.initialize()
+        if evaluations is None:
+            evaluations = [
+                SimpleEvaluation()
+            ]
+        self.evaluations = evaluations
 
-    def __str__(self):
-        if self._primary_parent is None:
-            return self.name
-        return '{}__{}'.format(str(self.name), str(self._primary_parent))
-
-    @property
-    def root_dir(self):
+    def _to_hash(self) -> str:
         """
+        describe the block uniquely as possible
 
         Returns:
-            str:
+            a String which is almost unique in blocks
         """
-        # この特徴量にディレクトリが指定されているときそれを返す
-        if self._root_dir is not None:
-            return self._root_dir
-
-        # ディレクトリ指定がなく, もと特徴量も無いとき `None` を返す
-        if self.parent is None:
-            return None
-
-        # ディレクトリ指定は無いが元特徴量があるとき, そちらに委ねる
-        return self._primary_parent.root_dir
+        return self.name
 
     @property
-    def has_output_dir(self):
-        return self.root_dir is not None
+    def runtime_env(self):
+        return network_hash(self)
 
-    @property
-    def is_recording(self):
-        return self.allow_save_local and self.has_output_dir
-
-    @property
-    def output_dir(self):
+    def check_is_fitted(self, experiment: ExperimentBackend) -> bool:
         """
-        モデルや特徴量を保存するディレクトリへの path
+        whether this block is `fitted` (i.e. ready to predict new data)
+
+        Args:
+            experiment:
+                Current Experiment.
+
         Returns:
-            str: path string
-
+            boolean. return True, this block is ready to predict
         """
-        if not self.has_output_dir:
-            return None
-        return os.path.join(self.root_dir, str(self))
+        return True
 
-    @property
-    def dataframe_backend(self):
-        return get_dataframe_backend()
+    def all_network_blocks(self):
+        retval = [self]
+        for b in self.parent_blocks:
+            retval += b.all_network_blocks()
+        return retval
 
-    @property
-    def output_train_meta_path(self):
-        """
-        作成した training 時の特徴量 csv への path
-        Returns:
-            str: path to training csv created by myself
-
-        """
-        if not self.has_output_dir:
-            return None
-        return os.path.join(self.output_dir, self.dataframe_backend.to_filename('train'))
-
-    @property
-    def output_test_meta_path(self):
-        if not self.has_output_dir: return None
-        return os.path.join(self.output_dir, self.dataframe_backend.to_filename('test'))
-
-    @property
-    def has_train_meta_path(self) -> bool:
-        return self.output_train_meta_path is not None and \
-               os.path.exists(self.output_train_meta_path)
+    def __repr__(self):
+        return self.__class__.__name__ + '__' + '_'.join([self.name, *[str(m.name) for m in self.parent_blocks]])
 
     @property
     def has_parent(self) -> bool:
-        return self.parent is not None
+        return self._parent is not None
 
     @property
-    def has_many_parents(self) -> bool:
-        return self.has_parent and len(self.parent) > 1
-
-    def call(self, df_source: pd.DataFrame, y=None, test=False) -> pd.DataFrame:
-        raise NotImplementedError()
-
-    def initialize(self):
-        log_output = None
-        if self.is_recording:
-            os.makedirs(self.output_dir, exist_ok=True)
-            log_output = os.path.join(self.output_dir, 'log.txt')
-
-        if self.parent is None:
-            logger_name = '****.' + self.name
-        else:
-            logger_name = self._primary_parent.name + '.' + self.name
-
-        self.logger = get_logger(f'vivid.{logger_name}',
-                                 log_level=Settings.LOG_LEVEL,
-                                 output_file=log_output,
-                                 output_level=Settings.TXT_LOG_LEVEL,
-                                 format_str='[vivid.{}] %(message)s'.format(logger_name))
-
-        self.exp_backend = LocalExperimentBackend(output_dir=self.output_dir)
-
-    @contextmanager
-    def set_silent(self):
-        self.logger.disabled = True
-        with self.exp_backend.silent() as exp:
-            yield exp
-        self.logger.disabled = False
-
-    def fit(self, input_df: pd.DataFrame, y: np.ndarray, force=False) -> pd.DataFrame:
+    def parent_blocks(self) -> List['BaseBlock']:
         """
-        fit feature to input dataframe
-
-        Args:
-            input_df:
-                training dataframe.
-            y:
-                target value
-            force:
-                force re-fit call. If set `True`, ignore cache train feature and run fit again.
+        get parents as list type.
+        If no parents, return empty list `[]`
+        If has single parent, converted to list like `[self._parent]`
 
         Returns:
-            features corresponding to the training data
+            array of parent blocks
         """
-        self.initialize()
-        if self.has_train_meta_path and not force:
-            self.logger.debug('train data is exists. load from local.')
-            return self.dataframe_backend.load(self.output_train_meta_path)
+        if self._parent is None:
+            return []
+        if isinstance(self._parent, BaseBlock):
+            return [self._parent]
+        return self._parent
 
-        if self.feat_on_train_df is not None:
-            return self.feat_on_train_df
+    def fit(self,
+            source_df: pd.DataFrame,
+            y: Union[None, np.ndarray],
+            experiment: ExperimentBackend) -> pd.DataFrame:
+        """Converts the internal state to match the training data.
 
-        if self.has_parent:
-            parent_output_df = pd.DataFrame()
-            for parent in self.parent:
-                parent_output_df = pd.concat([parent.fit(input_df, y, force=force), parent_output_df], axis=1)
-        else:
-            parent_output_df = input_df
+        NOTE:
+            If you are only doing a transformation (e.g., one that does not depend on training data, such as min-max scaling),
+            do not do anything inside this function and implement the transformation logic in transform.
+            It is based on the idea that you want to use the same code for prediction and training transformations.
 
-        with timer(self.logger, format_str='fit: {:.3f}[s]'):
-            output_df = self.call(parent_output_df, y, test=False)
-            if Settings.CACHE_ON_TRAIN:
-                self.feat_on_train_df = output_df
+        Args:
+            source_df:
+                source dataframe for fitting. pandas DataFrame object.
+            y: target numpy array.
+            experiment:
+                Current Experiment
 
-        self.post_fit(input_df, parent_output_df=parent_output_df, out_df=output_df, y=y)
-        return output_df
+        Returns:
+            feature data that correspond to source feature.
+            In the case of machine learning models, the return value is an out of fold prediction.
+        """
 
-    def post_fit(self,
-                 input_df: pd.DataFrame,
-                 parent_output_df: pd.DataFrame,
-                 out_df: pd.DataFrame,
-                 y: np.ndarray):
+        return self.transform(source_df)
+
+    def transform(self, source_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        transform new data.
+
+        Args:
+            source_df:
+                input data frame. pandas dataframe object
+
+        Returns:
+            feature data that correspond to source feature.
+            In the case of machine learning models, the return value is prediction values.
+        """
+        raise NotImplementedError()
+
+    def frozen(self, experiment: ExperimentBackend):
+        """
+        save training information to the experiment.
+
+        Args:
+            experiment: Experiment Backend
+
+        Returns:
+
+        """
+        return self
+
+    def unzip(self, experiment: ExperimentBackend):
+        """
+        load training information from experiment, and ready to prediction phase.
+        After call this, the instance expected as ready for transform.
+        if you set some attributes (like `self.coef_`) and use it to predict new data transform,
+        you should set these attributes
+
+        Args:
+            experiment: Experiment Backend
+        """
+        return self
+
+    def clear_fit_cache(self):
+        gc.collect()
+
+    def show_network(self, depth=0, prefix=' |-', sep='**'):
+        print(f'{sep * depth}{prefix}[{depth}] {self.name} <{self.runtime_env}>')
+        if self.parent_blocks:
+            for block in self.parent_blocks:
+                block.show_network(depth=depth + 1, prefix=prefix, sep=sep)
+        return
+
+    def report(self,
+               source_df: pd.DataFrame,
+               out_df: pd.DataFrame,
+               y: np.ndarray,
+               experiment: ExperimentBackend = None):
         """
         a lifecycle method called after fit method.
         To ensure consistency of the output data frame format, the output data frame cannot be modified within this
-        function. Therefore, there is no return value.
-
-        If you want to make any changes, please change the call method.
+        function.
 
         Args:
-            input_df: original input dataframe.
-            parent_output_df: dataframe created by parent features.
+            source_df:
+                dataframe pass to fit_core method.
+                In the default behavior, created by parent_blocks features
                 Note that it is this value that is passed to call. (Not `input_df`).
                 If you calculate the feature importance, usually use `output_df` instead of `input_df`.
-            out_df: dataframe created by me.
-            y: target.
+            out_df:
+                dataframe created by myself (i.e. the return value created by `.fit` method.)
+            y:
+                target
+            experiment:
+                Experiment using at `.fit` method.
 
         Returns:
             Nothing
         """
-        if self.is_recording:
-            self.dataframe_backend.save(out_df, save_to=self.output_train_meta_path)
-        self.exp_backend.mark('train_meta', {
-            'shape': out_df.shape,
-            'input_columns': input_df.columns,
-            'parent_columns': parent_output_df.columns,
-            'output_columns': out_df.columns,
-            'memory': out_df.memory_usage().sum()
-        })
-        self.exp_backend.save_object('parent_output_sample', parent_output_df.head(100))
-        self.exp_backend.save_object('oof_output_sample', out_df.head(100))
+        env = EvaluationEnv(block=self, output_df=out_df, parent_df=source_df, experiment=experiment, y=y)
 
-    def predict(self, input_df: pd.DataFrame, recreate=False) -> pd.DataFrame:
-        """
-        predict new data.
+        for callback in self.evaluations:
+            try:
+                callback.call(env)
+            except Exception as e:
+                import warnings
+                warnings.warn(str(e))
 
-        Notes:
-            This method has the ability to cache the return value and is applied when cache_on_test is true in config.
-            This is because the features are recursive in structure, preventing the calls from being recursively chained
-            in propagation from child to parent.
+    def load_output_from_storage(self,
+                                 storage_key: str,
+                                 experiment: ExperimentBackend,
+                                 is_fit_context=False) -> pd.DataFrame:
+        if not experiment.has(storage_key):
+            raise FileNotFoundError('{} is not found at experiment: {}'.format(storage_key, experiment))
 
-            Therefore, even if you call `predict` once and then make a prediction on another data, the prediction result
-            is not changed. You must explicitly set the recreate argument to True in order to recreate it.
+        if is_fit_context:
+            not_fit_blocks = not_fitted_blocks(self, experiment)
+            if len(not_fit_blocks) > 0:
+                raise FileNotFoundError(
+                    'Network has not fitted blocks. ' + ', '.join([b.name for b in not_fit_blocks]) + \
+                    '. create these blocks and renew stored output features.')
 
-        Args:
-            input_df: predict target dataframe
-            recreate: optional. If set as `True`, ignore cache file and call core create method (i.e. `self.call`).
+            logger.info('All Feature are ready to prediction. Load cache output.')
 
-        Returns:
-
-        """
-        self.initialize()
-
-        if not recreate and self.feat_on_test_df is not None:
-            return self.feat_on_test_df
-        if self.has_parent:
-            output_df = pd.DataFrame()
-            for parent in self.parent:
-                output_df = pd.concat([parent.predict(input_df, recreate), output_df], axis=1)
-        else:
-            output_df = input_df
-        pred_df = self.call(output_df, test=True)
-
-        if Settings.CACHE_ON_TEST:
-            self.feat_on_test_df = pred_df
-
-        if self.is_recording:
-            os.makedirs(self.output_dir, exist_ok=True)
-            self.dataframe_backend.save(pred_df, self.output_test_meta_path)
-
-        return pred_df
+            # if there is a meta-file on experiment, load from experiment, not create
+        experiment.logger.info('load from storage: {}'.format(storage_key))
+        output = experiment.load_object(storage_key)
+        return output
