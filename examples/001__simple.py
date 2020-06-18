@@ -14,4 +14,4 @@ if __name__ == '__main__':
 
     with experiment.as_environment(xgb.runtime_env) as exp:
         oof = xgb.fit(train_df, y, experiment=exp)
-        xgb.report(train_df, y, oof.values[:, 0], experiment=exp)
+        xgb.report(train_df, oof, y, experiment=exp)
