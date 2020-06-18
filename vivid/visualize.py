@@ -57,7 +57,11 @@ def check_y_and_pred(y_true, y_pred) -> (np.ndarray, np.ndarray, list):
 
 
 def visualize_distributions(y_true, y_pred, ax: Union[None, plt.Axes] = None):
-    check_classification_targets(y_true)
+    try:
+        check_classification_targets(y_true)
+    except ValueError:
+        return visualize_continuous_distributions(y_true, y_pred, ax=ax)
+
     y_true, y_pred, classes = check_y_and_pred(y_true, y_pred)
     n_classes = len(classes)
 
@@ -73,6 +77,21 @@ def visualize_distributions(y_true, y_pred, ax: Union[None, plt.Axes] = None):
         sns.distplot(pred[y == 0], ax=ax, label='Neg')
         ax.set_xlabel(f'class = {classes}')
 
+    return fig, ax
+
+
+def visualize_continuous_distributions(y_true,
+                                       y_pred,
+                                       ax: Union[None, plt.Axes] = None) \
+    -> [Union[plt.Figure, None], plt.Axes]:
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(6, 6))
+    else:
+        fig, ax = None, ax
+
+    sns.distplot(y_true, ax=ax, label='Target')
+    sns.distplot(y_pred, ax=ax, label='Predict')
+    ax.legend()
     return fig, ax
 
 
