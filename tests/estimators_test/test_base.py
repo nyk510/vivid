@@ -1,23 +1,34 @@
 import numpy as np
 import pytest
+from sklearn.linear_model import Ridge
 from sklearn.metrics import make_scorer
 from sklearn.metrics import mean_absolute_error, mean_squared_log_error
 from sklearn.model_selection import KFold, StratifiedKFold
 
 from vivid.estimators import boosting
-from vivid.estimators.ensumble import RFRegressorBlock
+from vivid.estimators.base import MetaBlock
 from vivid.estimators.kneighbor import TunedKNNRegressorBlock
 
 
 def test_add_sample_weight(regression_data, experiment):
+    """sample weight がちゃんと model fit に伝搬しているかの確認"""
+    class RecordRidge(Ridge):
+        def fit(self, *args, **kwargs):
+            self.args = args
+            self.kwrgs = kwargs
+            return super(RecordRidge, self).fit(*args, **kwargs)
+
+    class TestBlock(MetaBlock):
+        model_class = RecordRidge
+
     df, y = regression_data
     sample_weight = df.values[:, 0]
-    model = RFRegressorBlock(name='rf',
-                             sample_weight=sample_weight)
+    model = TestBlock(name='test',
+                      sample_weight=sample_weight)
     model.fit(df, y, experiment)
 
     for clf, (idx_train, idx_valid) in zip(model._fitted_models, model.get_fold_splitting(df.values, y)):
-        params = clf.fit_params_
+        params = clf.fitted_model_.kwrgs
         assert np.array_equal(params.get('sample_weight', None), sample_weight[idx_train])
 
 
