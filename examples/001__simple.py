@@ -20,3 +20,10 @@ if __name__ == '__main__':
     with experiment.as_environment(xgb.runtime_env) as exp:
         oof = xgb.fit(train_df, y_classifier, experiment=exp)
         xgb.report(train_df, oof, y_classifier, experiment=exp)
+
+    # use runner (recommended)
+    from vivid.runner import create_runner
+
+    runner = create_runner(blocks=xgb, experiment=experiment)
+    runner.fit(train_df, y_classifier, ignore_past_log=True)
+    runner.predict(train_df)

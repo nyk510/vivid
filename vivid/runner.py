@@ -258,6 +258,8 @@ class Runner:
         estimator_predicts = []
 
         self._initialize()
+
+        logger.info('---- start ---- ')
         self.show_tasks(self.tasks, is_fit_context)
 
         for i, task in enumerate(self.tasks):
@@ -280,16 +282,17 @@ class Runner:
             if task.block.is_estimator:
                 estimator_predicts += [EstimatorResult(out_df=out_df, block=task.block)]
 
+        logger.info('---- summary ----')
         self.show_tasks(self.tasks, is_fit_context)
 
         return estimator_predicts
 
     def show_tasks(self, tasks, is_fit_context=False):
         context = 'train' if is_fit_context else 'test'
-        logger.info('=' * 40)
-        logger.info('@{} / task list'.format(context))
+        logger.info('context={}'.format(context))
         for task in tasks:
             logger.info(str(task))
+        logger.info('-' * 40)
 
     def load_output(self, block, is_fit_context=False):
         filtered = list(filter(lambda x: x.block == block, self.tasks))
