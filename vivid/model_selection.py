@@ -32,5 +32,9 @@ class ContinuousStratifiedFold(StratifiedKFold):
         self.q = q
 
     def split(self, X, y, groups=None):
-        y_cat = pd.qcut(y, q=self.q).codes
+        try:
+            y_cat = pd.qcut(y, q=self.q).codes
+        except ValueError as e:
+            raise ValueError('Fail to quantile cutting (using pandas.qcut). '
+                             'There are cases where this value fails when you make it too large') from e
         return super(ContinuousStratifiedFold, self).split(X, y_cat, groups=groups)
