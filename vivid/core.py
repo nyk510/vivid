@@ -303,11 +303,12 @@ class BaseBlock(object):
         env = EvaluationEnv(block=self, output_df=out_df, parent_df=source_df, experiment=experiment, y=y)
 
         for callback in self.evaluations:
+            experiment.logger.debug('start evaluation: {}'.format(callback))
             try:
                 callback.call(env)
             except Exception as e:
                 import warnings
-                warnings.warn(str(e))
+                warnings.warn('raise Exception on {}. '.format(callback) + str(e))
 
     def load_output_from_storage(self,
                                  storage_key: str,
