@@ -28,7 +28,7 @@ jobs:
       - name: Install Extra Libs
         if: ${{ matrix.python-version }} == 3.6
         run: |
-          pip install dataclass
+          pip install dataclasses
       - name: Lint with flake8
         run: |
           # stop the build if there are Python syntax errors or undefined names
