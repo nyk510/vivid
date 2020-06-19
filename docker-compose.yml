@@ -9,6 +9,7 @@ services:
     working_dir: '/workspace'
     volumes:
       - ./:/workspace
+      - ${DATA_DIR}:/workspace/examples/datasets/
     ports:
       - 5555:8888
     environment:

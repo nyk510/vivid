@@ -2,17 +2,17 @@
 
 ## Basic Usage
 
-The main model classes is defined under `vivid.out_of_fold` module. All classes are subclass of `BaseOutOfFoldFeaure` and `AbstractFeature`.
+The main model classes is defined under `vivid.estimators` module. All classes are subclass of `BaseOutOfFoldFeaure` and `BaseBlock`.
 
 ## Predefined Out of Fold Feature Models
 
-* Linear Models: `vivid.out_of_fold.linear`
+* Linear Models: `vivid.estimators.linear`
   * Logistic Regression
   * Ridge Regression
-* K Nearest Neighborhood: `vivid.out_of_fold.neighbor`
-* RandomForest: `vivid.out_of_fold.ensumble`
-* Support Vecotr Machine: `vivid.out_of_fold.svm`
-* Gradient Boosted Decision Trees: `vivid.out_of_fold.boosting`
+* K Nearest Neighborhood: `vivid.estimators.neighbor`
+* RandomForest: `vivid.estimators.ensumble`
+* Support Vecotr Machine: `vivid.estimators.svm`
+* Gradient Boosted Decision Trees: `vivid.estimators.boosting`
   * LightGBM
   * XGBoost
 
@@ -26,17 +26,17 @@ Main constructor arguments is as follow.
 
 `BaseOutOfFoldFeaure` use K-Fold cross validation on train model and return out-of-fold feature (sometimes calls it meta feature).
 
-For example, to use XGBoost classifier model feature, import `XGBoostOutOfFoldClasssifier` from `vivid.out_of_fold.boosting`.
+For example, to use XGBoost classifier model feature, import `XGBClassifierBlock` from `vivid.estimators.boosting`.
 
 ```python
-from vivid.estimators.boosting import XGBoostOutOfFoldClasssifier
+from vivid.estimators.boosting import XGBClassifierBlock
 from sklearn.dataset import load_boston
 import pandas as pd
 
 X, y = load_boston(return_X_y=True)
 train_df = pd.DataFrame(X)
 
-model = XGBoostOutOfFoldClasssifier(name='xgb')
+model = XGBClassifierBlock(name='xgb')
 oof_df = model.fit(train_df, y)
 ```
 
@@ -46,7 +46,7 @@ If you set `root_dir`, traning logs and out-of-fold metrics save on the local st
 
 ```python
 # only change `root_dir`
-model = XGBoostOutOfFoldClasssifier(name='xgb', root_dir='/path/to/dir')
+model = XGBClassifierBlock(name='xgb', root_dir='/path/to/dir')
 model.fit(train_df, y)
 ```
 
@@ -108,7 +108,7 @@ pred_df.equals(pred2_df) # False
 ## Parameter Tuning
 
 vivid supports optimizing model parameters by [optuna](https://optuna.org/). For models that support optimization, simply run fit to search optuna for a predetermined search range, find the best parameters and training folds using it.
-For example, optimize the logistic regression model parameters, import `LogisticOutOfFoldFeature` class and run fit.
+For example, optimize the logistic regression model parameters, import `TunedLogisticBlock` class and run fit.
 
 ```python
 model = LogisticOutOfFoldFearure(n_trials=100) # can change try times
@@ -129,11 +129,11 @@ If you make stacking model, set the `MergeFeature`, which has input models as fi
 
 ```python
 from vivid.core import MergeFeature
-from vivid.estimators.boosting import XGBoostOutOfFoldClasssifier
+from vivid.estimators.boosting import XGBClassifierBlock
 from vivid.estimators.linear import TunedLogisticBlock
 
 single_models = [
-  XGBoostOutOfFoldClasssifier(name='xgb'),
+  XGBClassifierBlock(name='xgb'),
   TunedLogisticBlock(name='logistic')
 ]
 

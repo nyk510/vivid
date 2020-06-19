@@ -2,6 +2,8 @@
 
 Support Tools for Machine Learning Vividly 🚀
 
+[Documents](https://lucid-lumiere-9b9b91.netlify.app/)
+
 ## Usage
 
 The concept of vivid is **easy to use**. Only make instance and run fit, vivid save model metrics and weights (like feature_imporance, pr/auc curve, training time, ...) .

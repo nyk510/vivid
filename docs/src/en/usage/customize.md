@@ -2,7 +2,7 @@
 
 ## Change Parameter Search Range
 
-When you change parameter search range, override `generate_model_class_try_params`.
+When you change parameter search range, override `generate_model_class_try_params`. 
 
 ```python
 from vivid.estimators.boosting import TunedXGBRegressorBlock
@@ -21,7 +21,6 @@ When create your own out of feature model, extend `MetaBlock` class and set `mod
 
 ```python
 from sklearn.tree import DecisionTreeRegressor
-from vivid.estimators.base import MetaBlock
 
 class TreeRegressorOutOfFold(MetaBlock):
   model_class = DecisionTreeRegressor
@@ -61,7 +60,6 @@ You want to change cv strategy, add cv kwrgs to the model constructor.
 ```python
 from sklearn.model_selection import StratifiedKFold
 cv = StratifiedKFold(n_split=4)
-
 model = LogisticOutOfFold(name='logistic_stratified', cv=cv)
 ```
 
