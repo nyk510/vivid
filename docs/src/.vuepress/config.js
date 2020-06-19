@@ -4,7 +4,7 @@ module.exports = {
   title: 'VIVID',
   locales: {
     '/': {
-      lang: '日本語',
+      lang: 'ja',
       title: 'VIVID',
       description: 'Support Tools For Your Machine Learning Project Vividly',
     },
