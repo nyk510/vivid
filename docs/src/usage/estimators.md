@@ -105,7 +105,7 @@ class XGBClassifierBlock(BaseBoostingBlock):
     default_eval_metric = 'logloss'
     model_class = xgb.XGBClassifier
     # initial_params: ここで設定された値が model_class を作成する際に渡される。
-    initial_params = { 
+    initial_params = {
         'learning_rate': .1,
         'reg_lambda': 1e-2,
         'n_estimators': 1000,
@@ -168,6 +168,7 @@ xgb_classifier__1c720921
 fold ごとのモデルの重みと学習のログです。`metric.json` には学習時の条件や学習 `fit` にかかった時間、分割の情報などが記載されています。以下はそのサンプルです。
 
 ::: details output metric.json
+
 ```json
 {
     "fit": {
@@ -228,6 +229,7 @@ fold ごとのモデルの重みと学習のログです。`metric.json` には�
     }
 }
 ```
+
 :::
 
 ### 学習結果
@@ -235,6 +237,7 @@ fold ごとのモデルの重みと学習のログです。`metric.json` には�
 学習にかかった時間や使った特徴量のカラム名・out-of-fold の評価結果は `metric.json` に保存されます。以下はそのサンプルです。
 
 ::: details output metric.json
+
 ```json
 {
     "fit": {
@@ -289,6 +292,7 @@ fold ごとのモデルの重みと学習のログです。`metric.json` には�
     ]
 }
 ```
+
 :::
 
 いくつかの学習結果は画像として保存されます。例えば二値分類問題だとデフォルトでは AUC / PR-AUC のグラフと予測値の POS / NEG での分布が保存されます。

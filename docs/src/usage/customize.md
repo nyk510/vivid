@@ -2,7 +2,7 @@
 
 ## Change Parameter Search Range
 
-When you change parameter search range, override `generate_model_class_try_params`. 
+When you change parameter search range, override `generate_model_class_try_params`.
 
 ```python
 from vivid.estimators.boosting import TunedXGBRegressorBlock

@@ -13,7 +13,7 @@ features:
 footer: © 2020 vivid.
 ---
 
-## Install
+# Install
 
 ```bash
 pip install python-vivid
