@@ -2,7 +2,7 @@
 
 ## 概要
 
-vivid では `vivid.estimators` 配下のモジュールで、モデルによる予測を行なう構造を提供します。
+vivid では `vivid.estimators` 配下のモジュールで、モデルによる予測を行なう構造 Estimators を提供します。
 
 予測モデルはすべて `vivid.estimators.base.MetaBlock` を継承しています。 `MetaBlock` 自体は vivid で扱う学習・予測を管理するクラス `BaseBlock` を継承しているため、一貫した構造を保っています。
 
