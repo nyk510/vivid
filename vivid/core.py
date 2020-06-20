@@ -78,15 +78,37 @@ class AbstractEvaluation:
         raise NotImplementedError()
 
 
+def to_statistic(input_df: pd.DataFrame) -> dict:
+    """
+    データフレームの基礎統計量の算出
+
+    Args:
+        input_df:
+            target dataframe
+
+    Returns:
+        dict which has statistic data
+    """
+    return {
+        'shape': input_df.shape,
+        'null': input_df.isnull().sum(),
+        'memory_usage': input_df.memory_usage().sum(),
+        'columns': input_df.keys()
+    }
+
+
 class SimpleEvaluation(AbstractEvaluation):
     def call(self, env: EvaluationEnv):
-        env.experiment.mark('train_meta', {
-            'shape': env.output_df.shape,
-            'parent_columns': env.parent_df.columns,
-            'output_columns': env.output_df.columns,
-            'output_null': env.output_df.isnull().sum(),
-            'memory_usage': env.output_df.memory_usage().sum()
-        })
+        meta = {}
+        data = {
+            'input': env.parent_df,
+            'output': env.output_df
+        }
+
+        for k, df in data.items():
+            meta[k] = to_statistic(df)
+
+        env.experiment.mark('train_meta', meta)
         env.experiment.save_object('parent_output_sample', env.parent_df.head(100))
         env.experiment.save_object('oof_output_sample', env.output_df.head(100))
 
