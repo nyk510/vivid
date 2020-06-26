@@ -67,7 +67,7 @@ class MetricReport(AbstractEvaluation):
 class FeatureImportanceReport(AbstractEvaluation):
     """plot feature importance report"""
 
-    def __init__(self, n_importance_plot=50):
+    def __init__(self, n_importance_plot=200):
         """
         Args:
             n_importance_plot:

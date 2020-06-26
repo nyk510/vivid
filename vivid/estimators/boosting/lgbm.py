@@ -24,11 +24,12 @@ class ParameterStore:
             'colsample_bytree': .8,
             'subsample': .7,
             'num_leaves': 31,
+            'importance_type': 'gain'
         }
         gpu = _to_gpu(cpu)
 
     class Regression:
-        default = {
+        cpu = {
             'learning_rate': .1,
             'reg_lambda': 1e-2,
             'n_estimators': 300,
@@ -36,9 +37,10 @@ class ParameterStore:
             'colsample_bytree': .8,
             'subsample': .7,
             'num_leaves': 31,
+            'importance_type': 'gain'
         }
 
-        gpu = _to_gpu(default)
+        gpu = _to_gpu(cpu)
 
 
 class LGBMClassifierBlock(BaseBoostingBlock):
@@ -50,4 +52,4 @@ class LGBMClassifierBlock(BaseBoostingBlock):
 class LGBMRegressorBlock(BaseBoostingBlock):
     model_class = lgbm.LGBMRegressor
     default_eval_metric = 'rmse'
-    initial_params = deepcopy(ParameterStore.Regression.default)
+    initial_params = deepcopy(ParameterStore.Regression.cpu)
