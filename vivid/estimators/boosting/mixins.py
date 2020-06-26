@@ -8,9 +8,9 @@ from ..base import MetaBlock, TunerBlock
 
 class BoostingEarlyStoppingMixin:
     """Override fit parameter for GBDT models (like XGBoost, LightGBM, ...)"""
-    early_stopping_rounds = 100
+    early_stopping_rounds = 200
     default_eval_metric = None
-    fit_verbose = 100
+    fit_verbose = 200
 
     def get_fit_params_on_each_fold(self: Union['BoostingEarlyStoppingMixin', MetaBlock],
                                     model_params, training_set, validation_set, indexes_set,
