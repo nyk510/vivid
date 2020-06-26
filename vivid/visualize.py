@@ -147,7 +147,7 @@ def visualize_pr_curve(y_true, y_pred, ax: Union[None, plt.Axes] = None,
         pr_score[i] = average_precision_score(y_true[:, i], y_pred[:, i])
 
     if ax is None:
-        fig, ax = plt.subplots(figsize=(6, 5))
+        fig, ax = plt.subplots(figsize=(6, 6))
     else:
         fig, ax = None, ax
 
@@ -254,7 +254,8 @@ def visualize_feature_importance(models,
         order = order[:top_n]
 
     if ax is None:
-        fig = plt.figure(figsize=(7, len(order) * .25 + 2))
+        h = max(len(order) * .2, 5)
+        fig = plt.figure(figsize=(7, h))
         ax = fig.add_subplot(111)
     else:
         fig = None
@@ -265,7 +266,7 @@ def visualize_feature_importance(models,
         'order': order,
         'ax': ax,
         'orient': 'h',
-        'palette': 'cividis'
+        'palette': 'viridis'
     }
     params.update(plot_kwgs)
 
