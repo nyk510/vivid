@@ -1,3 +1,6 @@
+from typing import Tuple
+
+import numpy as np
 import pandas as pd
 from sklearn.model_selection import StratifiedKFold
 from sklearn.utils import _deprecate_positional_args
@@ -38,3 +41,43 @@ class ContinuousStratifiedFold(StratifiedKFold):
             raise ValueError('Fail to quantile cutting (using pandas.qcut). '
                              'There are cases where this value fails when you make it too large') from e
         return super(ContinuousStratifiedFold, self).split(X, y_cat, groups=groups)
+
+
+def create_adversarial_dataset(train_df: pd.DataFrame,
+                               test_df: pd.DataFrame) -> Tuple[pd.DataFrame, np.ndarray]:
+    """
+    create train / target tuple for adversarial validation.
+    The target to be created is an array with 0 for the training data and 1 for the test data.
+
+    Args:
+        train_df:
+            training data feature
+        test_df:
+            test data feature
+
+    Returns:
+        (feature, target) set.
+    """
+    if not isinstance(train_df, pd.DataFrame):
+        raise ValueError('train data must be pandas.DataFrame')
+    if not isinstance(test_df, pd.DataFrame):
+        raise ValueError('test data must be pandas.DataFrame')
+
+    tr_cols = set(train_df.keys())
+    test_cols = set(test_df.keys())
+
+    inter = tr_cols and test_cols
+    only_tr = tr_cols - inter
+    only_test = test_cols - inter
+
+    if only_tr:
+        raise ValueError('the following columns exist only train. {}'.format(','.join(only_tr)))
+    if only_test:
+        raise ValueError('the following columns exist only test. {}'.format(','.join(only_test)))
+
+    y = [0] * len(train_df) + [1] * len(test_df)
+    y = np.array(y)
+    out_df = pd.concat([train_df, test_df], sort=True, ignore_index=True)
+    out_df = out_df[train_df.columns]
+
+    return out_df, y
