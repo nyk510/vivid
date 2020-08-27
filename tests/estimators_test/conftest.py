@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import pytest
-from sklearn.datasets import load_boston, load_breast_cancer
+from sklearn.datasets import load_boston, load_breast_cancer, load_iris
 
 from vivid.backends import ExperimentBackend
 from vivid.core import BaseBlock
@@ -22,9 +22,9 @@ def regression_data() -> [pd.DataFrame, np.ndarray]:
     return pd.DataFrame(X), y
 
 
-@pytest.fixture
-def binary_data() -> [pd.DataFrame, np.ndarray]:
-    x, y = load_breast_cancer(True)
+@pytest.fixture(params=[(load_breast_cancer,), (load_iris,)])
+def binary_data(request) -> [pd.DataFrame, np.ndarray]:
+    x, y = request.param[0](True)
     return pd.DataFrame(x), y
 
 
