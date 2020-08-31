@@ -7,6 +7,7 @@ import joblib
 
 from vivid.setup import setup_project
 from vivid.utils import get_logger
+from vivid.utils import param_to_name
 
 logger = get_logger(__name__)
 
@@ -29,11 +30,30 @@ class CacheFunction:
         self.create_function = create_function
         self.save_dir = save_dir
 
+    def get_identify_string(self, params: dict):
+        """
+        params に一意な文字列を取得する
+
+        Args:
+            params:
+                文字列化する parameter の dict.
+        """
+        # note:
+        # hash 関数の値は session 間で変動するため, parameter を string 評価した時の値としている.
+        # しかしこの方法だと key / value のいずれかに object 等 string として評価したくない値が来た時に困る.
+        # (例えば滅茶苦茶文字列が長くなる, 等)
+        # 将来的には hash 化した値で以前の parameter と一致しているかどうかを判断するようにしたい.
+        s = param_to_name(params)
+        if len(s) == 0:
+            s = 'default'
+        return s
+
     def __call__(self, *args, **kwargs):
         os.makedirs(self.save_dir, exist_ok=True)
 
         call_args = inspect.getcallargs(self.create_function, *args, **kwargs)
-        identify_args = hash(to_hashable_dict(call_args))
+        identify_args = self.get_identify_string(call_args)
+
         save_to = os.path.join(self.save_dir, str(identify_args) + '.joblib')
 
         try:
