@@ -18,7 +18,7 @@ from vivid.core import AbstractEvaluation, BaseBlock, SimpleEvaluation
 from vivid.sklearn_extend import PrePostProcessModel
 from vivid.utils import get_logger
 from .evaluations import FeatureImportanceReport, MetricReport, curve_figure_reports
-
+from .evaluations import ConfusionMatrixReport
 logger = get_logger(__name__)
 
 
@@ -33,7 +33,8 @@ def _get_default_model_evaluations(evaluations: Union[None, List[AbstractEvaluat
         FeatureImportanceReport(),
         MetricReport(),
         *curve_figure_reports(),
-        SimpleEvaluation()
+        SimpleEvaluation(),
+        ConfusionMatrixReport()
     ]
 
 
