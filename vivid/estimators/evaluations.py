@@ -1,11 +1,16 @@
 from typing import Callable, List
 
+import matplotlib.pyplot as plt
+import pandas as pd
 from tabulate import tabulate
 
 from vivid.core import AbstractEvaluation, EvaluationEnv
+from vivid.metrics import as_binary
+from vivid.metrics import multiclass_metrics
 from vivid.metrics import regression_metrics, binary_metrics
 from vivid.visualize import NotSupportedError, visualize_feature_importance, visualize_distributions, \
     visualize_pr_curve, visualize_roc_auc_curve
+from vivid.visualize import visualize_confusion_matrix
 
 
 def estimator_only(func):
@@ -48,13 +53,15 @@ class MetricReport(AbstractEvaluation):
             return
 
         y = env.y
-        oof = env.output_df.values[:, 0]
+        oof = env.output_df.values
         experiment = env.experiment
 
         if env.block.is_regression_model:
             score = regression_metrics(y, oof)
-        else:
+        elif env.block._output_dim == 1:
             score = binary_metrics(y, oof)
+        else:
+            score = multiclass_metrics(y, oof)
         experiment.mark('train_metrics', score)
 
         if not self.show_to_log:
@@ -123,10 +130,53 @@ class CurveFigureReport(AbstractEvaluation):
             return
 
         env.experiment.logger.debug('start plot {}'.format(self.name))
-        fig, ax = self.visualizer(y_true=env.y, y_pred=env.output_df.values[:, 0], )
+        fig, ax = self.visualizer(y_true=env.y, y_pred=env.output_df.values)
         ax.set_title(env.block.name + ' ' + self.name)
         env.experiment.logger.debug('finished.')
         env.experiment.save_figure(self.name, fig=fig)
+
+
+class ConfusionMatrixReport(AbstractEvaluation):
+    def __init__(self, labels=None, plot_options=None, conf_options=None):
+        self.plot_options = plot_options
+        self.conf_options = conf_options
+        self.labels = labels
+        super(ConfusionMatrixReport, self).__init__()
+
+    def to_binary_predict(self, y_predict_proba):
+        return as_binary(y_predict_proba)
+
+    @estimator_only
+    def call(self, env: EvaluationEnv):
+        if env.block.is_regression_model:
+            return
+
+        n_classes = getattr(env.block, '_output_dim', -1)
+        if n_classes <= 1:
+            return
+
+        fig, ax = plt.subplots(figsize=(10, 10))
+        y_pred_label = self.to_binary_predict(env.output_df.values)
+        ax, conf = visualize_confusion_matrix(env.y,
+                                              pred_label=y_pred_label,
+                                              ax=ax,
+                                              plot_options=self.plot_options,
+                                              conf_options=self.conf_options,
+                                              labels=self.labels)
+        ax.set_title(env.block.name + ' Confusion Matrix')
+        fig.tight_layout()
+        env.experiment.save_figure('confusion_matrix', fig=fig)
+
+        if self.labels is None:
+            n_classes = len(conf)
+            labels = range(n_classes)
+        else:
+            labels = list(self.labels)
+
+        df = pd.DataFrame(conf,
+                          index=['label={}'.format(n) for n in labels],
+                          columns=['predict={}'.format(n) for n in labels])
+        env.experiment.save_dataframe('confusion_matrix', df=df)
 
 
 def curve_figure_reports() -> List[AbstractEvaluation]:
