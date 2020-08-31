@@ -1,6 +1,6 @@
 """visualization tools
 """
-from typing import Union, List, Callable, Tuple
+from typing import Union, List, Callable, Tuple, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -8,7 +8,9 @@ import pandas as pd
 import seaborn as sns
 from scipy.cluster.hierarchy import linkage
 from sklearn.base import BaseEstimator
+from sklearn.metrics import confusion_matrix
 from sklearn.metrics import roc_curve, auc, precision_recall_curve, average_precision_score
+from sklearn.preprocessing import OneHotEncoder, LabelEncoder
 from sklearn.utils.multiclass import check_classification_targets
 
 from .sklearn_extend import PrePostProcessModel
@@ -45,13 +47,18 @@ def corr_euclid_clustermap(df, n_rows=None, n_cols=None, cmap='viridis', z_score
 
 def check_y_and_pred(y_true, y_pred) -> (np.ndarray, np.ndarray, list):
     y_true = np.asarray(y_true)
-    if len(y_true.shape) == 2:
-        classes = range(y_true.shape[1])
-    else:
-        classes = [x for x in np.unique(y_true) if int(x) != 0]
+
+    le = LabelEncoder()
+    y_true = le.fit_transform(y_true)
+
+    classes = le.classes_
+    if len(classes) == 2:
+        classes = classes[:-1]
     n_classes = len(classes)
 
-    y_true = np.asarray(y_true).reshape(-1, n_classes)
+    ohe = OneHotEncoder()
+    y_true = ohe.fit_transform(y_true.reshape(-1, 1)).toarray()
+    y_true = y_true[:, -n_classes:]
     y_pred = np.asarray(y_pred).reshape(-1, n_classes)
     return y_true, y_pred, classes
 
@@ -164,6 +171,44 @@ def visualize_pr_curve(y_true, y_pred, ax: Union[None, plt.Axes] = None,
     ax.set_title('Precision Recall Curve')
     ax.legend(loc='lower left')
     return fig, ax
+
+
+def visualize_confusion_matrix(y_true,
+                               pred_label,
+                               ax=Optional[plt.Axes],
+                               labels=Optional[list],
+                               conf_options=Optional[dict],
+                               plot_options=Optional[dict]) -> Tuple[plt.Axes, np.ndarray]:
+    _conf_options = {
+        'normalize': 'true',
+    }
+    if conf_options is not None:
+        _conf_options.update(conf_options)
+
+    _plot_options = {
+        'cmap': 'Blues',
+        'annot': True
+    }
+    if plot_options is not None:
+        _plot_options.update(plot_options)
+
+    conf = confusion_matrix(y_true=y_true,
+                            y_pred=pred_label,
+                            **_conf_options)
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(10, 10))
+    sns.heatmap(conf, ax=ax, **_plot_options)
+    ax.set_ylabel('Label')
+    ax.set_xlabel('Predict')
+
+    if labels is not None:
+        ax.set_yticklabels(labels)
+        ax.set_xticklabels(labels)
+        ax.tick_params('y', labelrotation=0)
+        ax.tick_params('x', labelrotation=90)
+
+    return ax, conf
 
 
 class NotSupportedError(BaseException):
