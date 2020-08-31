@@ -193,3 +193,22 @@ def sigmoid(x: np.ndarray, threshold=15.) -> np.ndarray:
     """
     x = np.clip(x, -threshold, threshold)
     return 1.0 / (1.0 + np.exp(-x))
+
+
+def param_to_name(params: dict, key_sep='_', key_value_sep='=') -> str:
+    """
+    dict を `key=value` で連結した string に変換します.
+
+    Args:
+        params:
+        key_sep:
+            key 同士を連結する際に使う文字列.
+        key_value_sep:
+            それぞれの key / value を連結するのに使う文字列.
+            `"="` が指定されると例えば { 'foo': 10 } は `"foo=10"` に変換されます.
+
+    Returns:
+        文字列化した dict
+    """
+    sorted_params = sorted(params.items())
+    return key_sep.join(map(lambda x: key_value_sep.join(map(str, x)), sorted_params))
