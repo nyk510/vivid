@@ -39,7 +39,8 @@ def get_extra_requires():
     extras = {
         'test': ['pytest', 'pytest-cov', 'parameterized', 'ipython', 'jupyter', 'notebook', 'tornado==5.1.1',
                  # use skeras models
-                 'keras<=2.3.1', 'tensorflow',
+                 'keras<=2.3.1',
+                 'tensorflow<=2.2.1',
                  'comet_ml'],
         'document': ['sphinx', 'sphinx_rtd_theme']
     }

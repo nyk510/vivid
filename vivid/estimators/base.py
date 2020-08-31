@@ -11,6 +11,7 @@ from sklearn.exceptions import NotFittedError
 from sklearn.metrics import check_scoring
 from sklearn.metrics._scorer import _BaseScorer, SCORERS
 from sklearn.model_selection import check_cv
+from sklearn.preprocessing import LabelEncoder
 
 from vivid.backends.experiments import ExperimentBackend
 from vivid.core import AbstractEvaluation, BaseBlock, SimpleEvaluation
@@ -34,6 +35,19 @@ def _get_default_model_evaluations(evaluations: Union[None, List[AbstractEvaluat
         *curve_figure_reports(),
         SimpleEvaluation()
     ]
+
+
+def run_predict(model: PrePostProcessModel,
+                X,
+                is_regression: bool) -> np.ndarray:
+    if is_regression:
+        return model.predict(X).reshape(-1, 1)
+
+    pred = model.predict(X, prob=True)
+    n_classes = pred.shape[1]
+    if n_classes > 2:
+        return pred
+    return pred[:, 1].reshape(-1, 1)
 
 
 class MetaBlock(EstimatorMixin, BaseBlock):
@@ -84,6 +98,7 @@ class MetaBlock(EstimatorMixin, BaseBlock):
         self._initial_params = copy.deepcopy(self.initial_params)
         if add_init_param:
             self._initial_params.update(add_init_param)
+        self._output_dim = None
 
         super(MetaBlock, self).__init__(name, parent, evaluations=_get_default_model_evaluations(evaluations))
 
@@ -193,12 +208,10 @@ class MetaBlock(EstimatorMixin, BaseBlock):
 
     def transform(self, source_df: pd.DataFrame) -> pd.DataFrame:
         models = self._fitted_models
-        if self.is_regression_model:
-            fold_predicts = [model.predict(source_df.values) for model in models]
-        else:
-            fold_predicts = [model.predict(source_df.values, prob=True)[:, 1] for model in models]
+        fold_predicts = [run_predict(model, source_df.values, is_regression=self.is_regression_model)
+                         for model in models]
         preds = np.asarray(fold_predicts).mean(axis=0)
-        df = pd.DataFrame(preds.T, columns=['predict'])
+        df = pd.DataFrame(preds)
         return df
 
     def generate_default_model_parameter(self, X, y, experiment: Optional[ExperimentBackend] = None) -> dict:
@@ -256,13 +269,12 @@ class MetaBlock(EstimatorMixin, BaseBlock):
     def fit(self, source_df, y, experiment: ExperimentBackend) -> pd.DataFrame:
         X, y = source_df.values, y
         default_params = self.generate_default_model_parameter(X, y, experiment)
-
         with experiment.mark_time(prefix='fit'):
             models, oof = self.run_oof_train(X, y, default_params, experiment=experiment)
 
         self._fitted_models = models
         experiment.mark('n_cv', len(models))
-        return pd.DataFrame(oof, columns=['predict'])
+        return pd.DataFrame(oof)
 
     def run_oof_train(self, X, y, default_params, n_max: Union[int, None] = None,
                       experiment: Optional[ExperimentBackend] = None) -> ([List[PrePostProcessModel], np.ndarray]):
@@ -286,9 +298,21 @@ class MetaBlock(EstimatorMixin, BaseBlock):
                     * if n_fold <= 0, no fold run, return empty list and zero vector out-of-fold
 
         Returns:
-            list of fitted models and out-of-fold numpy array, output_dirs (if exist).
+            list of fitted models and out-of-fold numpy array.
+
+            out-of-fold: shape = (n_train, output_dim)
+
         """
-        oof = np.zeros_like(y, dtype=np.float32)
+        if self.is_regression_model:
+            self._output_dim = 1
+        else:
+            le = LabelEncoder()
+            le.fit(y)
+            n_classes = len(le.classes_)
+            self._output_dim = 1 if n_classes == 2 else n_classes
+
+        oof = np.zeros(shape=(len(y), self._output_dim), dtype=np.float32)
+
         splits = self.get_fold_splitting(X, y)
         models = []
         if experiment is None:
@@ -312,11 +336,8 @@ class MetaBlock(EstimatorMixin, BaseBlock):
                                       validation_set=(X_valid, y_valid),
                                       indexes_set=(idx_train, idx_valid),
                                       experiment=exp_i)
-                if self.is_regression_model:
-                    pred_i = clf.predict(X_valid).reshape(-1)
-                else:
-                    pred_i = clf.predict(X_valid, prob=True)[:, 1]
 
+                pred_i = run_predict(clf, X_valid, is_regression=self.is_regression_model)
                 oof[idx_valid] = pred_i
                 models.append(clf)
 
@@ -425,7 +446,9 @@ class TunerBlock(MetaBlock):
             scoring:
                 scoring method. String or Scoring Object.
                 When optimizing parameters, the best parameters in the sense of this score are chosen.
-                By default (pass None), For regressor model, use `RMSE` metric and for classifier, use `ROU AUC` scoring.s
+                By default (pass None)
+                - for regression model, use `RMSE` metric and
+                - for classifier model, use `negative log likelihood`.
                  (scoring obj must be satisfied check_scoring validation)
             optuna_jobs:
                 optuna parallel jobs.
@@ -446,7 +469,7 @@ class TunerBlock(MetaBlock):
             if self.is_regression_model:
                 scoring = 'neg_root_mean_squared_error'
             else:
-                scoring = 'roc_auc'
+                scoring = 'neg_log_loss'
 
         try:
             scoring = check_scoring(self.model_class, scoring=scoring, allow_none=False)
@@ -521,6 +544,10 @@ class TunerBlock(MetaBlock):
         """
         params = self.generate_try_parameter(trial)
         models, oof = self.run_oof_train(X, y, default_params=params, experiment=experiment)
+
+        if not self.is_regression_model:
+            # log計算の時の overflow を防ぐ処理
+            oof = np.clip(oof, 1e-7, 1 - 1e-7)
 
         scores = []
         sample_weight = self.sample_weight
