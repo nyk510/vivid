@@ -14,7 +14,7 @@ from vivid.visualize import visualize_pr_curve, visualize_roc_auc_curve, visuali
     visualize_pr_curve
 ])
 def test_raise_error_continuous(func):
-    y_true = [1, 1, 1, 0, 0, .6]  # contains continuous value `.6`
+    y_true = [1, 1, 1, 0, 0, .6]  # has `.6` (continuous value)
     y_pred = [1, 2, 1, .5, .3, 9]
 
     with pytest.raises(ValueError):
@@ -46,7 +46,6 @@ def test_continuous_target(function):
     RidgeClassifier(),
     Lasso(),
     RandomForestClassifier(),
-
     XGBClassifier(),
     LGBMClassifier(),
     PrePostProcessModel(instance=Lasso())
@@ -59,7 +58,7 @@ def test_feature_importance(binary_Xy, clf):
     visualize_feature_importance([clf])
 
 
-def test_not_support_classifier(binary_Xy):
+def test_feature_importance_which_is_not_supported_classifier(binary_Xy):
     from sklearn.svm import SVC
     clf = SVC()
     clf.fit(*binary_Xy)

@@ -226,10 +226,6 @@ class Runner:
             is_fit_context=True,
         )
 
-        oof_df = pd.DataFrame()
-        for p in estimator_predicts:
-            oof_df[p.block.runtime_env] = p.out_df.values[:, 0]
-        self.experiment.save_dataframe('out_of_folds', oof_df)
         return estimator_predicts
 
     def predict(self,
