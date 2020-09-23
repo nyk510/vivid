@@ -19,6 +19,10 @@ from vivid.sklearn_extend import PrePostProcessModel
 from vivid.utils import get_logger
 from .evaluations import FeatureImportanceReport, MetricReport, curve_figure_reports
 from .evaluations import ConfusionMatrixReport
+
+from vivid.metrics import binary_metrics, multiclass_metrics, regression_metrics
+from .utils import to_pretty_lines
+
 logger = get_logger(__name__)
 
 
@@ -277,6 +281,14 @@ class MetaBlock(EstimatorMixin, BaseBlock):
         experiment.mark('n_cv', len(models))
         return pd.DataFrame(oof)
 
+    def get_calculate_metrics(self):
+        if self.is_regression_model:
+            return regression_metrics
+
+        if self._output_dim == 1:
+            return binary_metrics
+        return multiclass_metrics
+
     def run_oof_train(self, X, y, default_params, n_max: Union[int, None] = None,
                       experiment: Optional[ExperimentBackend] = None) -> ([List[PrePostProcessModel], np.ndarray]):
         """
@@ -341,6 +353,12 @@ class MetaBlock(EstimatorMixin, BaseBlock):
                 pred_i = run_predict(clf, X_valid, is_regression=self.is_regression_model)
                 oof[idx_valid] = pred_i
                 models.append(clf)
+
+                calculator = self.get_calculate_metrics()
+                metric = calculator(y_valid, pred_i)
+                exp_i.mark('metrics', metric)
+                for l in to_pretty_lines(metric):
+                    exp_i.logger.info(l)
 
                 exp_i.mark('model_params', clf.get_params(deep=True))
                 exp_i.mark('n_fold', i)
@@ -607,6 +625,13 @@ class TunerBlock(MetaBlock):
         return best_params
 
 
+AGG_FUNC = {
+    'mean': np.mean,
+    'max': np.max,
+    'min': np.min
+}
+
+
 class EnsembleBlock(EstimatorMixin, BaseBlock):
 
     def __init__(self,
@@ -632,12 +657,24 @@ class EnsembleBlock(EstimatorMixin, BaseBlock):
                                             evaluations=_get_default_model_evaluations(evaluations),
                                             **kwargs)
         self.agg = agg
+
+        if not isinstance(agg, Callable):
+            np_func = AGG_FUNC.get(self.agg, None)
+            self.agg_func = lambda x: np_func(x, axis=1)
+        else:
+            self.agg_func = agg
+        if self.agg_func is None:
+            raise ValueError('agg must be in the following keys. {}'.format(','.join(AGG_FUNC.keys())))
+
         if len(self.parent_blocks) == 0:
             raise ValueError('Ensemble model must have parent blocks. ')
 
     def is_regression_model(self):
         return self.primary_block.is_regression_model
 
-    def transform(self, source_df):
-        x = source_df.agg(self.agg, axis=1).values
-        return pd.DataFrame(x, columns=['predict'])
+    def transform(self, source_df: pd.DataFrame) -> pd.DataFrame:
+        n_samples = len(source_df)
+        n_models = len(self.parent_blocks)
+        x = source_df.values.reshape(n_samples, n_models, -1)
+        x = self.agg_func(x)
+        return pd.DataFrame(x)
