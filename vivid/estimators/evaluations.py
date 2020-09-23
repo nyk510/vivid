@@ -12,6 +12,8 @@ from vivid.visualize import NotSupportedError, visualize_feature_importance, vis
     visualize_pr_curve, visualize_roc_auc_curve
 from vivid.visualize import visualize_confusion_matrix
 
+from .utils import to_pretty_lines
+
 
 def estimator_only(func):
     def wrapper(self, env: EvaluationEnv):
@@ -66,8 +68,10 @@ class MetricReport(AbstractEvaluation):
 
         if not self.show_to_log:
             return
-        s_metric = tabulate([score], headers='keys', tablefmt='github')
-        for l in s_metric.split('\n'):
+
+        lines = to_pretty_lines(score)
+        experiment.logger.info('=' * 20 + ' whole oof score ' + '=' * 20)
+        for l in lines:
             experiment.logger.info(l)
 
 

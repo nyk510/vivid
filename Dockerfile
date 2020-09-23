@@ -4,14 +4,13 @@ LABEL maintainer="nyker510"
 ARG JUPYTER_PASSWORD="dolphin"
 
 RUN apt-get update --fix-missing && \
-    apt-get install -y \
+  apt-get install -y \
         wget \
         make \
         unzip \
         bzip2 \
         gcc \
-        g++ \
-        cmake --fix-missing
+        g++ --fix-missing
 
 ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
 
@@ -21,6 +20,9 @@ ENV PATH ${CONDA_DIR}/bin:${PATH}
 RUN wget --quiet https://repo.continuum.io/miniconda/Miniconda3-4.5.12-Linux-x86_64.sh -O ~/miniconda.sh && \
     /bin/bash ~/miniconda.sh -b -p ${CONDA_DIR} && \
     rm ~/miniconda.sh
+
+RUN pip install cmake --upgrade
+RUN pip install -U certifi --ignore-installed
 
 ADD . .
 

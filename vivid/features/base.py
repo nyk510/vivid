@@ -146,9 +146,11 @@ class OneHotEncodingBlock(ColumnWiseBlock):
     def transform(self, source_df):
         out_df = pd.DataFrame()
 
-        for column, clf in self.fitted_models_.items():
+        for column, clf in self.fitted_models_.items():  # type: (str, OneHotEncoder)
             out_i = clf.transform(source_df[column].values)
-            _df = pd.DataFrame(out_i, columns=['{}_{}'.format(column, i) for i in range(len(out_i.T))])
+            categories = clf.cats_
+            _df = pd.DataFrame(out_i, columns=[str(c) for c in categories])
+            _df = _df.add_prefix('{}='.format(column))
             out_df = pd.concat(
                 [out_df, _df]
                 , axis=1)

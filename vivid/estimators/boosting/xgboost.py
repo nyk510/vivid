@@ -11,10 +11,12 @@ class XGBClassifierBlock(BaseBoostingBlock):
     model_class = xgb.XGBClassifier
     initial_params = {
         'learning_rate': .1,
-        'reg_lambda': 1e-2,
+        'reg_lambda': 1.,
         'n_estimators': 1000,
-        'colsample_bytree': .8,
+        'colsample_bytree': .5,
         'subsample': .7,
+        'max_depth': 5,
+        'min_child_weight': 1,
     }
 
 
@@ -24,8 +26,8 @@ class XGBRegressorBlock(BaseBoostingBlock):
     initial_params = {
         'objective': 'reg:squarederror',
         'learning_rate': .1,
-        'colsample_bytree': .7,
-        'subsample': .8,
+        'colsample_bytree': .5,
+        'subsample': .7,
         'reg_lambda': 1.,
         'max_depth': 5,
         'min_child_weight': 1,

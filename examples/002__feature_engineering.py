@@ -5,7 +5,7 @@ from vivid import Runner
 from vivid.backends.experiments import LocalExperimentBackend
 from vivid.core import BaseBlock
 from vivid.estimators.boosting import XGBRegressorBlock
-from vivid.features.base import BinningCountBlock
+from vivid.features.base import BinningCountBlock, OneHotEncodingBlock
 
 
 class SumBlock(BaseBlock):
@@ -24,6 +24,7 @@ if __name__ == '__main__':
     features = [
         CopyBlock(name='copy'),
         BinningCountBlock('bin', column=[0]),
+        OneHotEncodingBlock('oh', column='__all__'),
         SumBlock(name='sum')
     ]
 
