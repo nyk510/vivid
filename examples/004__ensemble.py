@@ -40,7 +40,7 @@ if __name__ == '__main__':
         SVRBlock('svr', parent=models),
         TunedRidgeBlock('ridge', parent=models)
     ]
-    stacked_stack = TunedRidgeBlock('ridge', parent=[*stacking, *models, *features])
+    stacked_stack = TunedRidgeBlock('ridge', parent=[*stacking, *models, *features, ensemble])
 
     stacked_stack.show_network()
     X, y = load_boston(return_X_y=True)
