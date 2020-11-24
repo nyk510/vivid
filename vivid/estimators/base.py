@@ -42,9 +42,9 @@ def _get_default_model_evaluations(evaluations: Union[None, List[AbstractEvaluat
     ]
 
 
-def run_predict(model: PrePostProcessModel,
-                X,
-                is_regression: bool) -> np.ndarray:
+def _run_predict(model: PrePostProcessModel,
+                 X,
+                 is_regression: bool) -> np.ndarray:
     if is_regression:
         return model.predict(X).reshape(-1, 1)
 
@@ -213,7 +213,7 @@ class MetaBlock(EstimatorMixin, BaseBlock):
 
     def transform(self, source_df: pd.DataFrame) -> pd.DataFrame:
         models = self._fitted_models
-        fold_predicts = [run_predict(model, source_df.values, is_regression=self.is_regression_model)
+        fold_predicts = [_run_predict(model, source_df.values, is_regression=self.is_regression_model)
                          for model in models]
         preds = np.asarray(fold_predicts).mean(axis=0)
         df = pd.DataFrame(preds)
@@ -350,7 +350,7 @@ class MetaBlock(EstimatorMixin, BaseBlock):
                                       indexes_set=(idx_train, idx_valid),
                                       experiment=exp_i)
 
-                pred_i = run_predict(clf, X_valid, is_regression=self.is_regression_model)
+                pred_i = _run_predict(clf, X_valid, is_regression=self.is_regression_model)
                 oof[idx_valid] = pred_i
                 models.append(clf)
 
