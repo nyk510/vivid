@@ -175,10 +175,32 @@ def visualize_pr_curve(y_true, y_pred, ax: Union[None, plt.Axes] = None,
 
 def visualize_confusion_matrix(y_true,
                                pred_label,
-                               ax=Optional[plt.Axes],
-                               labels=Optional[list],
-                               conf_options=Optional[dict],
-                               plot_options=Optional[dict]) -> Tuple[plt.Axes, np.ndarray]:
+                               ax: Optional[plt.Axes] = None,
+                               labels: Optional[list] = None,
+                               conf_options: Optional[dict] = None,
+                               plot_options: Optional[dict] = None) -> Tuple[plt.Axes, np.ndarray]:
+    """
+    visualize confusion matrix
+
+    Args:
+        y_true:
+            True Label. shape = (n_samples, )
+        pred_label:
+            Prediction Label. shape = (n_samples, )
+        ax:
+            matplotlib.pyplot.Axes object.
+        labels:
+            plot labels
+        conf_options:
+            option kwrgs when calculate confusion matrix.
+            pass to `confusion_matrix` (defined at scikit-learn)
+        plot_options:
+            option key-words when plot seaborn heatmap
+
+    Returns:
+
+    """
+
     _conf_options = {
         'normalize': 'true',
     }
