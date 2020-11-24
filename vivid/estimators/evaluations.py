@@ -93,7 +93,7 @@ class FeatureImportanceReport(AbstractEvaluation):
         try:
             env.experiment.logger.debug('start plot importance')
             fig, ax, importance_df = visualize_feature_importance(env.block._fitted_models,
-                                                                  columns=env.parent_df.columns,
+                                                                  columns=env.parent_df.columns.tolist(),
                                                                   top_n=self.n_importance_plot,
                                                                   plot_type='boxen')
         except NotSupportedError:
