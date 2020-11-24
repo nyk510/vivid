@@ -28,21 +28,31 @@ def get_target_columns(source_df: pd.DataFrame,
     """
 
     use_all = column == '__all__'
-    if not use_all and excludes is not None:
+    all_columns = source_df.columns.tolist()
+    if isinstance(column, str):
+        column = [column]
+
+    if use_all:
+        column = all_columns
+    else:
+        not_exist_columns = [c for c in column if c not in all_columns]
+        if len(not_exist_columns) > 0:
+            raise ValueError(
+                'some specific column does not exist in source_df columns. i.e. {}'.format(','.join(not_exist_columns)))
+
+    excludes = [] if excludes is None else excludes
+
+    if len(excludes) == 0:
+        return column
+
+    # 以下 excludes が存在している場合.
+    not_exist_columns = [c for c in excludes if c not in all_columns]
+    if len(not_exist_columns) > 0:
         raise ValueError(
-            'set specific columns and excludes both is not corrected condition. '
-            'columns: {}'.format(','.join(map(str, column))) and 'excludes: {}'.format(','.join(map(str, excludes)))
+            'some specific `excludes` columns does not exist in source_df columns. i.e. {}'.format(','.join(not_exist_columns))
         )
 
-    if column == '__all__':
-        column = source_df.columns.tolist()
-
-    if isinstance(column, str):
-        return [column]
-    if isinstance(column, Iterable):
-        return [x for x in column]
-
-    return []
+    return [c for c in column if c not in excludes]
 
 
 class ColumnWiseBlock(BaseBlock):

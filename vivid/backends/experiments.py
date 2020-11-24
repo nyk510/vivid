@@ -231,9 +231,9 @@ class LocalExperimentBackend(ExperimentBackend):
         return os.path.join(self.output_dir, key)
 
     @as_safety
-    def save_json(self, key, obj: dict):
+    def save_json(self, key, obj: dict, indent=2, ensure_ascii=False, **kwargs):
         with open(self._to_path(key, 'json'), 'w') as f:
-            json.dump(obj, f, cls=NestedEncoder, indent=4)
+            json.dump(obj, f, cls=NestedEncoder, indent=indent, ensure_ascii=ensure_ascii, **kwargs)
 
     @as_safety
     def save_dataframe(self, key, df: pd.DataFrame, **kwargs):
