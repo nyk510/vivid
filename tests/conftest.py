@@ -50,6 +50,20 @@ def regression_set(regression_Xy) -> [pd.DataFrame, np.ndarray]:
 
 
 @pytest.fixture
+def regression_hasna_set() -> [pd.DataFrame, np.ndarray]:
+    N = 1000
+    dim = 10
+
+    x = np.random.uniform(0, 1, size=(N, dim))
+    x = np.where(x < .5, np.nan, x)
+    y = np.random.uniform(size=N)
+
+    df = pd.DataFrame(x)
+
+    return df, y
+
+
+@pytest.fixture
 def toy_df() -> pd.DataFrame:
     data = {
         'int_type': [1, 2, 3, 2, 1],
