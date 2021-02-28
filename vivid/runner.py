@@ -17,14 +17,6 @@ from .utils import get_logger, timer
 logger = get_logger(__name__)
 
 
-def _pretty_float(value: Union[None, float], fmt='.3f', fill_str=''):
-    if value is None:
-        return fill_str
-
-    fmt = '{:' + fmt + '}'
-    return fmt.format(value)
-
-
 def check_block_fit_output(output_df, input_df):
     if not isinstance(output_df, pd.DataFrame):
         raise ValueError('Block output must be pandas dataframe object. Actually: {}'.format(type(output_df)))
@@ -123,7 +115,7 @@ class Task:
     experiment: LocalExperimentBackend
     done_fit: bool = False
     completed: bool = False
-    duration: float = None
+    duration: Union[float, str] = None
 
     def storage_key(self, is_fit_context: bool):
         return 'train_output' if is_fit_context else 'test_output'
@@ -160,6 +152,7 @@ class Task:
                             'already fitted and exist output files. use these cache files at {}'.format(exp.output_dir))
                         self.completed = True
                         self.done_fit = False
+                        self.duration = 'SKIP'
                         return exp.load_object(storage_key)
 
                     logger.debug('already exist trained files, but ignore these files. retrain')
@@ -321,7 +314,7 @@ class Runner:
 
             return {
                 'order': '{:03d}'.format(task.order_index),
-                'time[s]': _pretty_float(task.duration, fmt='.1f'),
+                'time[s]': task.duration,
                 'done': _to_check(task.completed),
                 'fit': _to_check(task.done_fit),
                 'name': task.block.name,
@@ -329,7 +322,7 @@ class Runner:
             }
 
         data = [to_dict(t) for t in tasks]
-        s_metric = tabulate(data, headers='keys', tablefmt='github')
+        s_metric = tabulate(data, headers='keys', tablefmt='github', floatfmt='.1f', missingval='--')
         for l in s_metric.split('\n'):
             output_method(l)
 
