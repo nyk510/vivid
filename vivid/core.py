@@ -179,6 +179,10 @@ class BaseBlock(object):
 
     @property
     def runtime_env(self):
+        """block を保存する際につけるディレクトリの命名.
+        [NOTE]: 名前が一致しているかつ, parent が異なる block 同士での名前の batting を避けるために hash 化処理を入れていたが,
+        実用上名前がバッティングすることはほぼ無い
+        """
         return network_hash(self)
 
     def check_is_fitted(self, experiment: ExperimentBackend) -> bool:
@@ -352,3 +356,16 @@ class BaseBlock(object):
         experiment.logger.info('load from storage: {}'.format(storage_key))
         output = experiment.load_object(storage_key)
         return output
+
+
+class AutoSaveMixin:
+    save_fields = []
+
+    def frozen(self, experiment: ExperimentBackend):
+        for field in self.save_fields:
+            print(field)
+            experiment.save_as_python_object(field, getattr(self, field))
+
+    def unzip(self, experiment: ExperimentBackend):
+        for field in self.save_fields:
+            setattr(self, field, experiment.load_object(field))
