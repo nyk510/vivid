@@ -14,6 +14,7 @@ import pandas as pd
 from vivid.env import get_dataframe_backend
 from vivid.json_encoder import NestedEncoder
 from vivid.utils import get_logger
+from vivid.utils import Timer
 
 
 class ExperimentBackend:
@@ -90,17 +91,14 @@ class ExperimentBackend:
         pass
 
     @contextmanager
-    def mark_time(self, prefix: str) -> ContextManager['ExperimentBackend']:
-        start = datetime.now()
-        self.logger.debug('start time tracking...for [{}]'.format(prefix))
-        yield self
-        end = datetime.now()
-        duration = (end - start).total_seconds() / 60
-        self.logger.debug('finished. duration: {:.2f}[min]'.format(duration))
+    def mark_time(self, prefix: str) -> ContextManager[Timer]:
+        timer = Timer(logger=self.logger, prefix=prefix)
+        with timer:
+            yield timer
         self.mark(prefix, {
-            'start_at': start,
-            'end_at': end,
-            'duration_minutes': '{:.2f}'.format(duration)
+            'start_at': timer.start,
+            'end_at': timer.end,
+            'duration_minutes': '{:.2f}'.format(timer.duration)
         })
 
     @contextmanager
@@ -172,7 +170,7 @@ class LocalExperimentBackend(ExperimentBackend):
         logger_name = get_logger_name(to, keys=self.keys)
         self.logger = get_logger(name=logger_name,
                                  output_file=self.logging_path,
-                                 format_str='%(name)-30s: %(levelname)-8s %(message)s')
+                                 format_str='%(asctime)s: %(name)-10s: %(message)s')
         self.logger.debug('experiment output is {}'.format(self.output_dir))
         self.logger.debug('logger name: {}'.format(logger_name))
 
