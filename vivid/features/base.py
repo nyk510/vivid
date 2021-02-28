@@ -1,5 +1,6 @@
 from typing import Union, Iterable, List
 
+import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator
 
@@ -162,3 +163,20 @@ class CountEncodingBlock(ColumnWiseBlock):
 
     def get_output_colname(self, column):
         return 'CE_{}'.format(column)
+
+
+class FillnaBlock(BaseBlock):
+    _save_attributes = [
+        'fill_values_'
+    ]
+
+    def fit(self,
+            source_df: pd.DataFrame,
+            y: Union[None, np.ndarray],
+            experiment: ExperimentBackend) -> pd.DataFrame:
+        self.fill_values_ = source_df.median()
+        return self.transform(source_df)
+
+    def transform(self, source_df: pd.DataFrame) -> pd.DataFrame:
+        out_df = source_df.fillna(self.fill_values_)
+        return out_df
