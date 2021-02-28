@@ -24,7 +24,7 @@ class BoostingEarlyStoppingMixin:
             early_stopping_rounds=self.early_stopping_rounds,
             eval_set=[validation_set],
             eval_metric=eval_metric,
-            verbose=0,  # stop default_loader console log
+            verbose=100000,  # stop default_loader console log
             callbacks=[
                 # write GBDT logging to the output log file
                 LogEvaluationCallback(logger=experiment.logger,
