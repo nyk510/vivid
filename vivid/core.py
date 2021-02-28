@@ -3,10 +3,10 @@
 """
 
 import dataclasses
+import gc
 import hashlib
 from typing import Union, List
 
-import gc
 import numpy as np
 import pandas as pd
 
@@ -137,6 +137,10 @@ class BaseBlock(object):
     allow_save_local = True
     is_estimator = False
 
+    # save attributes in frozen / unzip method.
+    # set these fields which calculate and set in `fit` method and use in `transform` method.
+    _save_attributes = []
+
     def __init__(self,
                  name: str,
                  parent: Union[None, 'BaseBlock', List['BaseBlock']] = None,
@@ -266,7 +270,7 @@ class BaseBlock(object):
         """
         raise NotImplementedError()
 
-    def frozen(self, experiment: ExperimentBackend):
+    def frozen(self, experiment: ExperimentBackend) -> 'BaseBlock':
         """
         save training information to the experiment.
 
@@ -276,6 +280,14 @@ class BaseBlock(object):
         Returns:
 
         """
+        for field in self._save_attributes:
+            try:
+                object = getattr(self, field)
+            except ValueError:
+                logger.warning(f'field {field} not found this block {self.name}. '
+                               'Check your implementation, usually typo or mistakes at `_save_attributes`')
+                continue
+            experiment.save_as_python_object(field, object)
         return self
 
     def unzip(self, experiment: ExperimentBackend):
@@ -288,7 +300,15 @@ class BaseBlock(object):
         Args:
             experiment: Experiment Backend
         """
-        return self
+        for field in self._save_attributes:
+            try:
+                object = experiment.load_object(field)
+            except FileNotFoundError:
+                logger.warning(
+                    f'Fail to load {field}, it is not found in current experiment context. ;('
+                    f'If you use it in transform method, it doesnt work well (missing attribute error)')
+                continue
+            setattr(self, field, object)
 
     def clear_fit_cache(self):
         gc.collect()
@@ -356,16 +376,3 @@ class BaseBlock(object):
         experiment.logger.info('load from storage: {}'.format(storage_key))
         output = experiment.load_object(storage_key)
         return output
-
-
-class AutoSaveMixin:
-    save_fields = []
-
-    def frozen(self, experiment: ExperimentBackend):
-        for field in self.save_fields:
-            print(field)
-            experiment.save_as_python_object(field, getattr(self, field))
-
-    def unzip(self, experiment: ExperimentBackend):
-        for field in self.save_fields:
-            setattr(self, field, experiment.load_object(field))
