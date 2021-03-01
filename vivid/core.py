@@ -6,7 +6,7 @@ import dataclasses
 import gc
 import hashlib
 from typing import Union, List
-
+import warnings
 import numpy as np
 import pandas as pd
 
@@ -283,8 +283,8 @@ class BaseBlock(object):
         for field in self._save_attributes:
             try:
                 object = getattr(self, field)
-            except ValueError:
-                logger.warning(f'field {field} not found this block {self.name}. '
+            except AttributeError:
+                warnings.warn(f'field `{field}` is not found in the block `{self.name}`. '
                                'Check your implementation, usually typo or mistakes at `_save_attributes`')
                 continue
             experiment.save_as_python_object(field, object)
@@ -304,9 +304,9 @@ class BaseBlock(object):
             try:
                 object = experiment.load_object(field)
             except FileNotFoundError:
-                logger.warning(
-                    f'Fail to load {field}, it is not found in current experiment context. ;('
-                    f'If you use it in transform method, it doesnt work well (missing attribute error)')
+                warnings.warn(
+                    f'Fail to load `{field}`. It is not found in current experiment context ;( . '
+                    f'If you use the field in `transform` method, it doesnt work well (missing attribute error)')
                 continue
             setattr(self, field, object)
 
