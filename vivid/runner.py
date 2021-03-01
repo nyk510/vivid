@@ -1,9 +1,9 @@
 """block runner"""
+import gc
 from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Union
 
-import gc
 import networkx as nx
 import pandas as pd
 from sklearn.exceptions import NotFittedError
@@ -115,6 +115,7 @@ class Task:
     experiment: LocalExperimentBackend
     done_fit: bool = False
     completed: bool = False
+    duration: Union[float, str] = None
 
     def storage_key(self, is_fit_context: bool):
         return 'train_output' if is_fit_context else 'test_output'
@@ -151,6 +152,7 @@ class Task:
                             'already fitted and exist output files. use these cache files at {}'.format(exp.output_dir))
                         self.completed = True
                         self.done_fit = False
+                        self.duration = 'SKIP'
                         return exp.load_object(storage_key)
 
                     logger.debug('already exist trained files, but ignore these files. retrain')
@@ -163,17 +165,17 @@ class Task:
                                      is_fit_context=is_fit_context)
 
         with self.experiment.as_environment(block.runtime_env) as exp:
-            if is_fit_context:
-                with exp.mark_time('fit'):
+            timer_name = 'fit' if is_fit_context else 'predict'
+            with exp.mark_time(timer_name) as timer:
+                if is_fit_context:
                     out_df = execute_fit(block, source_df, y, exp)
-                self.done_fit = True
-            else:
-                out_df = execute_transform(block, source_df, exp)
-
-            logger.info('save output to storage')
+                    self.done_fit = True
+                else:
+                    out_df = execute_transform(block, source_df, exp)
             exp.save_as_python_object(storage_key, out_df)
 
         self.completed = True
+        self.duration = timer.duration
         del source_df
         gc.collect()
         return out_df
@@ -261,17 +263,19 @@ class Runner:
 
         self._initialize()
 
-        logger.info('======= start 🚀 ======= ')
+        root_logger = self.experiment.logger
+
+        root_logger.info('======= start 🚀 ======= ')
         self.show_tasks(self.tasks, is_fit_context)
 
         for i, task in enumerate(self.tasks):
 
             changed_blocks = task.changed_blocks_in_parents(self.tasks)
             if len(changed_blocks) > 0:
-                logger.info('related blocks has changed. so run ignore cache context. / ' +
-                            ','.join(map(str, changed_blocks)))
+                root_logger.info('related blocks has changed. so run ignore cache context. / ' +
+                                 ','.join(map(str, changed_blocks)))
 
-            with timer(logger, prefix=task.block.name + ' '):
+            with timer(root_logger, prefix=task.block.name + ' '):
                 out_df = task.run(input_df=input_df,
                                   y=y,
                                   is_fit_context=is_fit_context,
@@ -285,14 +289,14 @@ class Runner:
                 estimator_predicts += [EstimatorResult(out_df=out_df, block=task.block)]
 
             if show_each_task:
-                self.show_tasks(self.tasks, is_fit_context=is_fit_context)
+                self.show_tasks(self.tasks, is_fit_context=is_fit_context, output_method=self.experiment.logger.debug)
 
-        logger.info('======= Completed!! 🎉 ======= ')
-        self.show_tasks(self.tasks, is_fit_context)
+        root_logger.info('======= Completed!! 🎉 ======= ')
+        self.show_tasks(self.tasks, is_fit_context, output_method=self.experiment.logger.info)
 
         return estimator_predicts
 
-    def show_tasks(self, tasks: List[Task], is_fit_context=False):
+    def show_tasks(self, tasks: List[Task], is_fit_context=False, output_method=print):
         context = 'train' if is_fit_context else 'test'
 
         def to_dict(task: Task):
@@ -310,19 +314,20 @@ class Runner:
 
             return {
                 'order': '{:03d}'.format(task.order_index),
-                'completed': _to_check(task.completed),
-                'done fit': _to_check(task.done_fit),
+                'time[s]': task.duration,
+                'done': _to_check(task.completed),
+                'fit': _to_check(task.done_fit),
                 'name': task.block.name,
                 'parent info (N/details)': get_parent_name(task.block)
             }
 
         data = [to_dict(t) for t in tasks]
-        s_metric = tabulate(data, headers='keys', tablefmt='github')
+        s_metric = tabulate(data, headers='keys', tablefmt='github', floatfmt='.1f', missingval='--')
         for l in s_metric.split('\n'):
-            logger.info(l)
+            output_method(l)
 
-        logger.info('( context={} )'.format(context))
-        logger.info('-' * 40)
+        output_method('( context={} )'.format(context))
+        output_method('-' * 40)
 
     def load_output(self, block, is_fit_context=False):
         filtered = list(filter(lambda x: x.block == block, self.tasks))

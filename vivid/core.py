@@ -3,10 +3,10 @@
 """
 
 import dataclasses
+import gc
 import hashlib
 from typing import Union, List
-
-import gc
+import warnings
 import numpy as np
 import pandas as pd
 
@@ -137,6 +137,10 @@ class BaseBlock(object):
     allow_save_local = True
     is_estimator = False
 
+    # save attributes in frozen / unzip method.
+    # set these fields which calculate and set in `fit` method and use in `transform` method.
+    _save_attributes = []
+
     def __init__(self,
                  name: str,
                  parent: Union[None, 'BaseBlock', List['BaseBlock']] = None,
@@ -179,6 +183,10 @@ class BaseBlock(object):
 
     @property
     def runtime_env(self):
+        """block を保存する際につけるディレクトリの命名.
+        [NOTE]: 名前が一致しているかつ, parent が異なる block 同士での名前の batting を避けるために hash 化処理を入れていたが,
+        実用上名前がバッティングすることはほぼ無い
+        """
         return network_hash(self)
 
     def check_is_fitted(self, experiment: ExperimentBackend) -> bool:
@@ -262,7 +270,7 @@ class BaseBlock(object):
         """
         raise NotImplementedError()
 
-    def frozen(self, experiment: ExperimentBackend):
+    def frozen(self, experiment: ExperimentBackend) -> 'BaseBlock':
         """
         save training information to the experiment.
 
@@ -272,6 +280,14 @@ class BaseBlock(object):
         Returns:
 
         """
+        for field in self._save_attributes:
+            try:
+                object = getattr(self, field)
+            except AttributeError:
+                warnings.warn(f'field `{field}` is not found in the block `{self.name}`. '
+                               'Check your implementation, usually typo or mistakes at `_save_attributes`')
+                continue
+            experiment.save_as_python_object(field, object)
         return self
 
     def unzip(self, experiment: ExperimentBackend):
@@ -284,7 +300,15 @@ class BaseBlock(object):
         Args:
             experiment: Experiment Backend
         """
-        return self
+        for field in self._save_attributes:
+            try:
+                object = experiment.load_object(field)
+            except FileNotFoundError:
+                warnings.warn(
+                    f'Fail to load `{field}`. It is not found in current experiment context ;( . '
+                    f'If you use the field in `transform` method, it doesnt work well (missing attribute error)')
+                continue
+            setattr(self, field, object)
 
     def clear_fit_cache(self):
         gc.collect()
