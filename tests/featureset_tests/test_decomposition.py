@@ -21,8 +21,8 @@ def test_pca_block(tmpdir, regression_set, block):
     df, y = regression_set
     runner.fit(train_df=df, y=y)
 
-    for field in block.save_fields:
-        assert os.path.exists(os.path.join(block_dir, field + '.joblib')), os.listdir(block_dir)
+    for attr in block._save_attributes:
+        assert os.path.exists(os.path.join(block_dir, attr + '.joblib')), os.listdir(block_dir)
 
     runner.predict(df)
 
