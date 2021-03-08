@@ -50,7 +50,8 @@ def get_target_columns(source_df: pd.DataFrame,
     not_exist_columns = [c for c in excludes if c not in all_columns]
     if len(not_exist_columns) > 0:
         raise ValueError(
-            'some specific `excludes` columns does not exist in source_df columns. i.e. {}'.format(','.join(not_exist_columns))
+            'some specific `excludes` columns does not exist in source_df columns. i.e. {}'.format(
+                ','.join(not_exist_columns))
         )
 
     return [c for c in column if c not in excludes]
@@ -188,5 +189,5 @@ class FillnaBlock(BaseBlock):
         return self.transform(source_df)
 
     def transform(self, source_df: pd.DataFrame) -> pd.DataFrame:
-        out_df = source_df.fillna(self.fill_values_)
+        out_df = source_df.replace([np.inf, -np.inf], np.nan).fillna(self.fill_values_)
         return out_df

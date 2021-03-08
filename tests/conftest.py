@@ -55,6 +55,7 @@ def regression_hasna_set() -> [pd.DataFrame, np.ndarray]:
     dim = 10
 
     x = np.random.uniform(0, 1, size=(N, dim))
+    x = np.where(x < .3, np.inf, x)
     x = np.where(x < .5, np.nan, x)
     y = np.random.uniform(size=N)
 
