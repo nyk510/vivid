@@ -100,6 +100,7 @@ class FeatureImportanceReport(AbstractEvaluation):
             env.experiment.logger.debug(f'class {env.block.model_class} is not supported for feature importance.')
             return
 
+        fig.tight_layout()
         env.experiment.save_figure('importance', fig)
         env.experiment.save_dataframe('importance', importance_df)
 
