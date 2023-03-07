@@ -322,7 +322,7 @@ def visualize_feature_importance(models,
 
     if ax is None:
         h = max(len(order) * .2, 5)
-        fig = plt.figure(figsize=(7, h))
+        fig = plt.figure(figsize=(12, h))
         ax = fig.add_subplot(111)
     else:
         fig = None
